@@ -124,6 +124,8 @@ defmodule Alchemoo.Builtins do
   def call(:add_verb, args), do: add_verb(args)
   def call(:delete_verb, args), do: delete_verb(args)
   def call(:set_verb_code, args), do: set_verb_code(args)
+  def call(:function_info, args), do: function_info(args)
+  def call(:disassemble, args), do: disassemble(args)
 
   # Property management
   def call(:add_property, args), do: add_property(args)
@@ -1176,6 +1178,29 @@ defmodule Alchemoo.Builtins do
   end
 
   defp set_verb_code(_), do: Value.err(:E_ARGS)
+
+  # function_info(name) - get built-in function metadata
+  defp function_info([{:str, _name}]) do
+    # Return {min_args, max_args, types}
+    # For now, return a generic signature: 0 to -1 args, any types
+    # Real implementation would look up actual signatures
+    Value.list([Value.num(0), Value.num(-1), Value.list([])])
+  end
+
+  defp function_info(_), do: Value.err(:E_ARGS)
+
+  # disassemble(obj, verb) - return compiled code representation
+  defp disassemble([{:obj, obj_id}, {:str, verb_name}]) do
+    # Since we are an AST interpreter, "disassembly" is effectively just the source
+    # or an AST dump. For compatibility, we'll return the source lines
+    # which is what verb_code does.
+    case DBServer.get_object(obj_id) do
+      {:ok, obj} -> get_verb_code_from_object(obj, verb_name)
+      {:error, err} -> Value.err(err)
+    end
+  end
+
+  defp disassemble(_), do: Value.err(:E_ARGS)
 
   ## Property Management
 

@@ -409,4 +409,16 @@ defmodule Alchemoo.BuiltinsTest do
     {:list, ids} = Builtins.call(:queue_info, [])
     assert is_list(ids)
   end
+
+  test "introspection built-ins" do
+    # function_info
+    {:list, info} = Builtins.call(:function_info, [Value.str("tostr")])
+    assert length(info) == 3
+    
+    # disassemble (mocked as source code return)
+    # Use object #0 and a known verb if possible, or expect error/empty
+    # Assuming object #0 exists
+    result = Builtins.call(:disassemble, [Value.obj(0), Value.str("invalid_verb")])
+    assert result == Value.err(:E_VERBNF)
+  end
 end

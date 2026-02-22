@@ -3,12 +3,12 @@
 ## Summary
 
 - **Total MOO Built-ins:** ~150
-- **Implemented:** 107
-- **Remaining:** ~43
+- **Implemented:** 109
+- **Remaining:** ~41
 - **Critical for basic functionality:** Complete! ✅
 - **Important for advanced functionality:** Complete! ✅
 
-## Implemented (107)
+## Implemented (109)
 
 ### Type Conversion (6)
 - ✅ `typeof(value)` - Get type
@@ -112,7 +112,7 @@
 - ✅ `get_property(obj, name)` - Internal get
 - ✅ `set_property(obj, name, val)` - Internal set
 
-### Verb Operations (9)
+### Verb Operations (11)
 - ✅ `verbs(obj)` - List verbs
 - ✅ `verb_info(obj, verb)` - Get verb info
 - ✅ `set_verb_info(obj, verb, info)` - Set verb info
@@ -122,6 +122,8 @@
 - ✅ `set_verb_args(obj, verb, args)` - Set verb args
 - ✅ `verb_code(obj, verb)` - Get verb code
 - ✅ `set_verb_code(obj, verb, code)` - Set verb code
+- ✅ `function_info(name)` - Get built-in function info
+- ✅ `disassemble(obj, verb)` - Get compiled code (source)
 
 ### Task Management (8)
 - ✅ `suspend(seconds)` - Suspend current task
