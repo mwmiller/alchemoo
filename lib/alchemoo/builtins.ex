@@ -139,6 +139,11 @@ defmodule Alchemoo.Builtins do
   def call(:call_function, args), do: call_function(args)
   def call(:eval, args), do: eval_fn(args)
 
+  # Security
+  def call(:caller_perms, args), do: caller_perms(args)
+  def call(:set_task_perms, args), do: set_task_perms(args)
+  def call(:callers, args), do: callers_fn(args)
+
   # Network
   def call(:idle_seconds, args), do: idle_seconds(args)
   def call(:connected_seconds, args), do: connected_seconds(args)
@@ -557,11 +562,57 @@ defmodule Alchemoo.Builtins do
 
   defp this_fn(_), do: Value.err(:E_ARGS)
 
+  # Security
+
+  # caller_perms() - get current caller permissions
+  defp caller_perms([]) do
+    case get_task_context(:caller_perms) do
+      nil -> Value.obj(0)
+      id -> Value.obj(id)
+    end
+  end
+
+  defp caller_perms(_), do: Value.err(:E_ARGS)
+
+  # set_task_perms(obj) - set current task permissions
+  defp set_task_perms([{:obj, obj_id}]) do
+    # Only wizards can set permissions to other objects (simplified for now)
+    # TODO: Check wizard flag on current perms
+    set_task_context(:perms, obj_id)
+    set_task_context(:player, obj_id)
+    Value.num(1)
+  end
+
+  defp set_task_perms(_), do: Value.err(:E_ARGS)
+
+  # callers([full]) - get current call stack
+  defp callers_fn([]) do
+    stack = get_task_context(:stack) || []
+    # Return stack as list of lists (simplified: {this, verb, owner, player})
+    Enum.map(stack, fn entry ->
+      Value.list([
+        Value.obj(entry.this),
+        Value.str(entry.verb_name),
+        Value.obj(entry.verb_owner),
+        Value.obj(entry.player)
+      ])
+    end)
+    |> Value.list()
+  end
+
+  defp callers_fn(_), do: Value.err(:E_ARGS)
+
   defp get_task_context(key) do
     case Process.get(:task_context) do
       nil -> nil
       context -> Map.get(context, key)
     end
+  end
+
+  defp set_task_context(key, value) do
+    context = Process.get(:task_context) || %{}
+    new_context = Map.put(context, key, value)
+    Process.put(:task_context, new_context)
   end
 
   ## String Operations

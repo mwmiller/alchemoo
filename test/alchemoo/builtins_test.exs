@@ -331,4 +331,53 @@ defmodule Alchemoo.BuiltinsTest do
     result = Builtins.call(:eval, [Value.str("invalid syntax")])
     assert match?({:list, [{:num, 0}, {:str, _}]}, result)
   end
+
+  test "security built-ins" do
+    # Initial context
+    Process.put(:task_context, %{
+      player: 2,
+      this: 0,
+      caller: -1,
+      perms: 2,
+      caller_perms: 0,
+      stack: []
+    })
+
+    assert Builtins.call(:caller_perms, []) == Value.obj(0)
+    assert Builtins.call(:player, []) == Value.obj(2)
+
+    # set_task_perms
+    assert Builtins.call(:set_task_perms, [Value.obj(100)]) == Value.num(1)
+    assert Builtins.call(:player, []) == Value.obj(100)
+    
+    # callers() - empty initially
+    assert Builtins.call(:callers, []) == Value.list([])
+
+    # callers() - with stack
+    Process.put(:task_context, %{
+      player: 100,
+      this: 10,
+      caller: 0,
+      perms: 100,
+      caller_perms: 2,
+      stack: [
+        %{this: 0, verb_name: "test", verb_owner: 2, player: 2}
+      ]
+    })
+
+    {:list, [caller_info]} = Builtins.call(:callers, [])
+    assert caller_info == Value.list([
+      Value.obj(0),
+      Value.str("test"),
+      Value.obj(2),
+      Value.obj(2)
+    ])
+
+    # eval with callers - eval itself should see the stack
+    {:list, [{:num, 1}, {:list, stack}]} = Builtins.call(:eval, [Value.str("return callers();")])
+    assert length(stack) == 1
+    assert Enum.at(stack, 0) == caller_info
+
+    Process.delete(:task_context)
+  end
 end

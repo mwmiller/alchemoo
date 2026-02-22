@@ -27,6 +27,8 @@ defmodule Alchemoo.Task do
     :handler_pid,
     # Process to send result to for sync execution
     :sync_caller,
+    # Current task permissions (object ID)
+    :perms,
     ticks_used: 0,
     tick_quota: @default_tick_quota,
     suspended_until: nil,
@@ -114,17 +116,32 @@ defmodule Alchemoo.Task do
 
   @impl true
   def init(opts) do
+    # Merge context into environment for variable access
+    initial_env = Keyword.get(opts, :env, %{})
+    player_id = Keyword.get(opts, :player, 2)
+    this_id = Keyword.get(opts, :this, 2)
+    caller_id = Keyword.get(opts, :caller, 2)
+    args = Keyword.get(opts, :args, [])
+
+    env =
+      initial_env
+      |> Map.put("player", Value.obj(player_id))
+      |> Map.put("this", Value.obj(this_id))
+      |> Map.put("caller", Value.obj(caller_id))
+      |> Map.put("args", Value.list(args))
+
     task = %__MODULE__{
       id: make_ref(),
       verb_code: Keyword.fetch!(opts, :verb_code),
-      env: Keyword.get(opts, :env, %{}),
-      player: Keyword.get(opts, :player),
-      this: Keyword.get(opts, :this),
-      caller: Keyword.get(opts, :caller),
-      args: Keyword.get(opts, :args, []),
+      env: env,
+      player: player_id,
+      this: this_id,
+      caller: caller_id,
+      args: args,
       handler_pid: Keyword.get(opts, :handler_pid),
       sync_caller: Keyword.get(opts, :sync_caller),
-      tick_quota: Keyword.get(opts, :tick_quota, @default_tick_quota)
+      tick_quota: Keyword.get(opts, :tick_quota, @default_tick_quota),
+      perms: player_id
     }
 
     # Registry allows metadata-based lookups (e.g. all tasks for a player)
@@ -136,12 +153,15 @@ defmodule Alchemoo.Task do
       started_at: System.system_time(:second)
     })
 
-    # Process dictionary provides local context for built-in function execution
     Process.put(:task_context, %{
+      id: task.id,
       player: task.player,
       this: task.this,
       caller: task.caller,
-      handler_pid: task.handler_pid
+      handler_pid: task.handler_pid,
+      perms: task.perms,
+      caller_perms: Keyword.get(opts, :caller_perms, 0),
+      stack: Keyword.get(opts, :stack, [])
     })
 
     {:ok, task, {:continue, :execute}}

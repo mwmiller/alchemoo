@@ -92,7 +92,7 @@ defmodule Alchemoo.Runtime do
 
       verb ->
         # Execute verb code
-        execute_verb(verb, args, env, runtime)
+        execute_verb(object.id, verb, args, env, runtime)
     end
   end
 
@@ -108,36 +108,90 @@ defmodule Alchemoo.Runtime do
   end
 
   # Execute verb code
-  defp execute_verb(verb, args, env, runtime) do
+  defp execute_verb(this_id, verb, args, env, runtime) do
+    # Save current task context for restoration
+    old_context = Process.get(:task_context)
+
+    # Create new task context for this verb call
+    new_context =
+      case old_context do
+        nil ->
+          # Should not happen in a running task, but for testing...
+          %{
+            this: this_id,
+            player: 2,
+            caller: -1,
+            perms: 2,
+            caller_perms: 0,
+            stack: []
+          }
+
+        context ->
+          # In MOO, caller is the 'this' of the previous verb
+          # caller_perms is the task perms of the caller
+          # new perms is the owner of the called verb (unless it's set_task_perms)
+          %{
+            context
+            | this: this_id,
+              caller: context.this,
+              caller_perms: context.perms,
+              # player remains task perms initially
+              player: context.perms,
+              # MOO manual says verbs start with their owner's perms
+              # but only if it's a built-in or something? No.
+              # Actually, verb perms are usually the verb owner.
+              perms: verb.owner,
+              stack: [
+                %{
+                  this: context.this,
+                  verb_name: context[:verb_name] || "(initial)",
+                  verb_owner: context[:perms] || 0,
+                  player: context.player
+                }
+                | context.stack
+              ]
+          }
+      end
+
+    Process.put(:task_context, %{new_context | verb_name: verb.name})
+
     # Parse verb code
-    case MOOSimple.parse(verb.code) do
-      {:ok, %Alchemoo.AST.Block{statements: stmts}} ->
-        # Set up verb environment
-        verb_env =
-          env
-          |> Map.put(:runtime, runtime)
-          |> Map.put("args", Value.list(args))
+    result =
+      case MOOSimple.parse(verb.code) do
+        {:ok, %Alchemoo.AST.Block{statements: stmts}} ->
+          # Set up verb environment - inherit and override variables
+          verb_env =
+            env
+            |> Map.put(:runtime, runtime)
+            |> Map.put("args", Value.list(args))
+            |> Map.put("this", Value.obj(this_id))
+            |> Map.put("player", Value.obj(new_context.player))
+            |> Map.put("caller", Value.obj(new_context.caller))
 
-        # Execute statements
-        try do
-          _final_env =
-            Enum.reduce(stmts, verb_env, fn stmt, current_env ->
-              case Alchemoo.Interpreter.eval(stmt, current_env) do
-                {:ok, _, new_env} -> new_env
-                {:ok, _val} -> current_env
-                {:error, err} -> throw({:error, err})
-              end
-            end)
+          # Execute statements
+          try do
+            _final_env =
+              Enum.reduce(stmts, verb_env, fn stmt, current_env ->
+                case Alchemoo.Interpreter.eval(stmt, current_env) do
+                  {:ok, _, new_env} -> new_env
+                  {:ok, _val} -> current_env
+                  {:error, err} -> throw({:error, err})
+                end
+              end)
 
-          # If we get here, no explicit return - return 0
-          {:ok, Value.num(0)}
-        catch
-          {:return, val} -> {:ok, val}
-          {:error, err} -> {:error, err}
-        end
+            # If we get here, no explicit return - return 0
+            {:ok, Value.num(0)}
+          catch
+            {:return, val} -> {:ok, val}
+            {:error, err} -> {:error, err}
+          end
 
-      {:error, _reason} ->
-        {:error, Value.err(:E_VERBNF)}
-    end
+        {:error, _reason} ->
+          {:error, Value.err(:E_VERBNF)}
+      end
+
+    # Restore old context
+    Process.put(:task_context, old_context)
+    result
   end
 end
