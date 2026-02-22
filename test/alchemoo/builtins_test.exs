@@ -426,5 +426,6 @@ defmodule Alchemoo.BuiltinsTest do
     # listen/unlisten currently return E_PERM
     assert Builtins.call(:listen, [Value.obj(0), Value.num(8080)]) == Value.err(:E_PERM)
     assert Builtins.call(:unlisten, [Value.num(8080)]) == Value.err(:E_PERM)
+    assert Builtins.call(:open_network_connection, [Value.str("google.com"), Value.num(80)]) == Value.err(:E_PERM)
   end
 end

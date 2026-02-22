@@ -3,12 +3,12 @@
 ## Summary
 
 - **Total MOO Built-ins:** ~150
-- **Implemented:** 111
-- **Remaining:** ~39
+- **Implemented:** 112
+- **Remaining:** ~38
 - **Critical for basic functionality:** Complete! ✅
 - **Important for advanced functionality:** Complete! ✅
 
-## Implemented (111)
+## Implemented (112)
 
 ### Type Conversion (6)
 - ✅ `typeof(value)` - Get type
@@ -140,11 +140,12 @@
 - ✅ `set_task_perms(obj)` - Set permissions for the current task
 - ✅ `callers()` - Get current call stack
 
-### Network (4)
+### Network (5)
 - ✅ `idle_seconds(player)` - Get idle time
 - ✅ `connected_seconds(player)` - Get connection time
 - ✅ `listen(obj, point)` - Start listening (returns E_PERM for now)
 - ✅ `unlisten(point)` - Stop listening (returns E_PERM for now)
+- ✅ `open_network_connection(host, port)` - Outbound connect (returns E_PERM for now)
 
 ### Server Management (6)
 - ✅ `server_version()` - Get server version

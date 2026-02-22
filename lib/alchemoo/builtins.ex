@@ -155,6 +155,7 @@ defmodule Alchemoo.Builtins do
   def call(:buffered_output_length, args), do: buffered_output_length(args)
   def call(:listen, args), do: listen(args)
   def call(:unlisten, args), do: unlisten(args)
+  def call(:open_network_connection, args), do: open_network_connection(args)
 
   # Server management
   def call(:server_version, args), do: server_version(args)
@@ -1728,6 +1729,15 @@ defmodule Alchemoo.Builtins do
   end
 
   defp unlisten(_), do: Value.err(:E_ARGS)
+
+  # open_network_connection(host, port) - open outbound connection
+  defp open_network_connection([{:str, _host}, {:num, _port}]) do
+    # TODO: Implement outbound TCP connections
+    # Requires configuration to allow specific hosts/ports
+    Value.err(:E_PERM)
+  end
+
+  defp open_network_connection(_), do: Value.err(:E_ARGS)
 
   # queue_info([task_id]) - get info about queued tasks
   defp queue_info([]) do
