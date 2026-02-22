@@ -421,4 +421,10 @@ defmodule Alchemoo.BuiltinsTest do
     result = Builtins.call(:disassemble, [Value.obj(0), Value.str("invalid_verb")])
     assert result == Value.err(:E_VERBNF)
   end
+
+  test "network built-ins" do
+    # listen/unlisten currently return E_PERM
+    assert Builtins.call(:listen, [Value.obj(0), Value.num(8080)]) == Value.err(:E_PERM)
+    assert Builtins.call(:unlisten, [Value.num(8080)]) == Value.err(:E_PERM)
+  end
 end

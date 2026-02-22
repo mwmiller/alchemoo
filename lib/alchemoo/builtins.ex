@@ -153,6 +153,8 @@ defmodule Alchemoo.Builtins do
   def call(:idle_seconds, args), do: idle_seconds(args)
   def call(:connected_seconds, args), do: connected_seconds(args)
   def call(:buffered_output_length, args), do: buffered_output_length(args)
+  def call(:listen, args), do: listen(args)
+  def call(:unlisten, args), do: unlisten(args)
 
   # Server management
   def call(:server_version, args), do: server_version(args)
@@ -1708,6 +1710,24 @@ defmodule Alchemoo.Builtins do
   end
 
   defp buffered_output_length(_), do: Value.err(:E_ARGS)
+
+  # listen(obj, point) - start listening for connections
+  defp listen([{:obj, _obj}, {:num, _point}]) do
+    # TODO: Implement dynamic listener starting via Network.Supervisor
+    # Requires wizard permissions
+    # For now, return E_PERM to indicate not allowed/supported yet
+    Value.err(:E_PERM)
+  end
+
+  defp listen(_), do: Value.err(:E_ARGS)
+
+  # unlisten(point) - stop listening
+  defp unlisten([{:num, _point}]) do
+    # TODO: Implement dynamic listener stopping
+    Value.err(:E_PERM)
+  end
+
+  defp unlisten(_), do: Value.err(:E_ARGS)
 
   # queue_info([task_id]) - get info about queued tasks
   defp queue_info([]) do
