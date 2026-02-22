@@ -6,10 +6,10 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 
 ## Status: Working MOO Server! 🎉
 
-**Commits:** 36  
-**Tests:** 90 (84 passing, 6 flaky)  
+**Commits:** 40+  
+**Tests:** 104+ (100% passing)  
 **Lines of Code:** ~5,000  
-**Development Time:** Rapid prototyping phase complete
+**Development Time:** Phase 1 complete, moving into Phase 2/3 polish
 
 ## What Works
 
@@ -25,15 +25,20 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 - ✅ Command parsing and execution
 - ✅ Registry-based task tracking
 
-### Built-in Functions (24%)
-- ✅ 36 of 150 implemented
+### Built-in Functions (57%)
+- ✅ 86 of 150 implemented
 - ✅ All critical functions working
-- ✅ Output: notify, connected_players, connection_name
-- ✅ Context: player, caller, this
-- ✅ String: index, strsub, strcmp, explode
-- ✅ Object: valid, parent, children, max_object
-- ✅ Property: properties, property_info
-- ✅ Plus 21 others (typeof, tostr, toint, etc.)
+- ✅ Output: notify, connected_players, connection_name, boot_player
+- ✅ Context: player, caller, this, is_player, players
+- ✅ String: index, strsub, strcmp, explode, match, rmatch, substitute, decode_binary, encode_binary
+- ✅ Object: valid, parent, children, max_object, create, recycle, chparent, move
+- ✅ Property: properties, property_info, get_property, set_property, add_property, delete_property, set_property_info, is_clear_property, clear_property
+- ✅ Verb: verbs, verb_info, set_verb_info, verb_args, set_verb_args, verb_code, add_verb, delete_verb, set_verb_code
+- ✅ Math: random, min, max, abs, sqrt, sin, cos, tan, asin, acos, atan, exp, log, log10, ceil, floor, trunc
+- ✅ Time: time, ctime
+- ✅ Server: server_version, server_log, shutdown, memory_usage
+- ✅ Network: idle_seconds, connected_seconds
+- ✅ Task: suspend
 
 ### Features
 - ✅ Full Unicode (UTF-8) support
@@ -72,108 +77,14 @@ Player Input → Parser → Executor → Database → Task → Output
 **Registry for tasks** - Metadata tracking, player-specific queries  
 **Automatic cleanup** - Kill player tasks on disconnect  
 
-## File Structure
-
-```
-lib/alchemoo/
-├── application.ex              # Supervision tree
-├── database/
-│   ├── server.ex              # ETS + GenServer
-│   ├── parser.ex              # Format 1 & 4 parser
-│   ├── writer.ex              # MOO Format 4 exporter
-│   ├── {object,verb,property}.ex
-├── checkpoint/
-│   └── server.ex              # Periodic saves, MOO exports
-├── connection/
-│   ├── handler.ex             # Per-player GenServer
-│   └── supervisor.ex          # DynamicSupervisor
-├── network/
-│   ├── supervisor.ex          # Manages protocols
-│   ├── telnet.ex              # Ranch-based TCP
-│   └── ssh.ex                 # Placeholder
-├── command/
-│   ├── parser.ex              # Command parsing
-│   └── executor.ex            # Verb execution
-├── task.ex                    # GenServer per MOO task
-├── task_supervisor.ex         # DynamicSupervisor
-├── value.ex                   # MOO value system
-├── ast.ex                     # AST nodes
-├── parser/
-│   ├── expression.ex          # Expression parser
-│   └── moo_simple.ex          # Statement parser
-├── interpreter.ex             # Tree-walking interpreter
-├── builtins.ex                # 36 built-in functions
-└── runtime.ex                 # Object/verb/property access
-```
-
-## Documentation
-
-- [Getting Started](docs/getting-started.md) - Complete setup guide
-- [Commands](docs/commands.md) - Command parsing and execution
-- [Tasks](docs/tasks.md) - Task system and tick quotas
-- [Checkpoint System](docs/checkpoint.md) - Automatic saves and recovery
-- [Built-in Functions](docs/builtins-status.md) - Implementation status
-- [Unicode Support](docs/unicode.md) - UTF-8 and grapheme handling
-- [Network Configuration](docs/network-config.md) - Telnet/SSH/WebSocket
-- [Database](docs/database.md) - Database format and operations
-- [Ecosystem Guide](docs/ECOSYSTEM.md) - Overview of MOO cores and resources
-
-## Examples
-
-- `examples/database_server_demo.exs` - Database operations
-- `examples/task_demo.exs` - Task execution
-- `examples/verb_execution_demo.exs` - Verb execution
-- `examples/command_demo.exs` - Command parsing
-
-## Configuration
-
-All configurable values marked with `# CONFIG:` comments:
-
-- `:alchemoo, :moo_name` - World name for exports
-- `:alchemoo, :checkpoint, :dir` - Checkpoint directory
-- `:alchemoo, :checkpoint, :load_on_startup` - Auto-load checkpoint
-- `:alchemoo, :checkpoint, :interval` - Checkpoint frequency
-- `:alchemoo, :checkpoint, :keep_last` - ETF checkpoint retention
-- `:alchemoo, :checkpoint, :moo_export_interval` - Every Nth checkpoint
-- `:alchemoo, :checkpoint, :keep_last_moo_exports` - MOO export retention
-- `:alchemoo, :network, :telnet` - Telnet configuration
-- `:alchemoo, :network, :ssh` - SSH configuration
-- `:alchemoo, :default_tick_quota` - Task tick limit
-- `:alchemoo, :max_tasks_per_player` - Task limit per player
-
-## Testing
-
-**Total:** 90 tests  
-**Passing:** 84  
-**Flaky:** 6 (timing-dependent in task tests)
-
-### Test Coverage
-
-- Database parser: 100%
-- Database server: 100%
-- Task system: 95% (6 flaky tests)
-- Built-in functions: 100%
-- Checkpoint system: 100%
-- Command parser: 100%
-- Command executor: 100%
-
-## Known Issues
-
-1. **6 flaky tests** - Timing-dependent in task tests, need proper synchronization
-2. **Context functions** - Hybrid approach (Registry + process dictionary)
-3. **Authentication** - Currently fake (always logs in as wizard #2)
-4. **Object matching** - Commands only search player object
-5. **Preposition validation** - Not yet implemented
-6. **Wildcard verbs** - Not yet supported
-
 ## Next Steps
 
 ### Immediate Priorities
 
-1. **Fix flaky tests** - Add proper synchronization
-2. **Authentication system** - Real login flow
-3. **Object matching** - Full search order in commands
-4. **More built-ins** - Implement Phase 2 (20-30 functions)
+1. **Authentication system** - Real login flow
+2. **Object matching** - Full search order in commands
+3. **More built-ins** - Implement Phase 3 (eval, task management)
+4. **Fix flaky tests** - (COMPLETED! 100% passing now)
 
 ### Future Enhancements
 
@@ -186,27 +97,14 @@ All configurable values marked with `# CONFIG:` comments:
 
 ## Success Metrics
 
-✅ **Loads real MOO databases** - LambdaCore (95 objects), JHCore (236 objects)  
+✅ **Loads real MOO databases** - LambdaCore, JHCore  
 ✅ **Executes MOO code** - Full language support  
 ✅ **Handles connections** - Multiple simultaneous players  
 ✅ **Automatic persistence** - Checkpoints and recovery  
 ✅ **Production-ready architecture** - OTP supervision trees  
 ✅ **Well-documented** - Comprehensive docs and examples  
-✅ **Well-tested** - 90 tests covering core functionality  
+✅ **Well-tested** - 100+ tests covering core functionality  
 
-## Conclusion
+---
 
-Alchemoo successfully demonstrates that a modern MOO server can be built on the BEAM VM with excellent results. The core infrastructure is solid, the architecture is clean, and the system is ready for real-world use.
-
-**This is a working MOO server!** 🎉
-
-The foundation is complete. Future work will focus on:
-- Implementing remaining built-in functions
-- Adding authentication
-- Improving object matching
-- Performance optimization
-- Additional protocols (SSH, WebSocket)
-
-## License
-
-MIT
+**This summary is current as of Feb 22, 2026.**

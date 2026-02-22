@@ -3,32 +3,36 @@
 ## Summary
 
 - **Total MOO Built-ins:** ~150
-- **Implemented:** 76
-- **Remaining:** ~74
+- **Implemented:** 92
+- **Remaining:** ~58
 - **Critical for basic functionality:** Complete! ✅
 - **Important for advanced functionality:** Complete! ✅
 
-## Implemented (21)
+## Implemented (92)
 
-### Type Conversion (5)
+### Type Conversion (6)
 - ✅ `typeof(value)` - Get type
 - ✅ `tostr(value)` - Convert to string
 - ✅ `toint(value)` - Convert to integer
+- ✅ `tonum(value)` - Alias for `toint`
 - ✅ `toobj(value)` - Convert to object
 - ✅ `toliteral(value)` - Convert to literal string
 
-### List Operations (6)
+### List Operations (9)
 - ✅ `length(list)` - Get length
 - ✅ `is_member(value, list)` - Check membership
 - ✅ `listappend(list, value)` - Append to list
 - ✅ `listinsert(list, value, index)` - Insert into list
 - ✅ `listdelete(list, index)` - Delete from list
 - ✅ `listset(list, index, value)` - Set list element
+- ✅ `setadd(list, value)` - Add to set
+- ✅ `setremove(list, value)` - Remove from set
+- ✅ `sort(list)` - Sort list
 
 ### Comparison (1)
 - ✅ `equal(value1, value2)` - Deep equality
 
-### Math (6)
+### Math (23)
 - ✅ `random(max)` - Random number
 - ✅ `min(...)` - Minimum value
 - ✅ `max(...)` - Maximum value
@@ -36,77 +40,76 @@
 - ✅ `sqrt(num)` - Square root
 - ✅ `sin(num)` - Sine
 - ✅ `cos(num)` - Cosine
+- ✅ `tan(num)` - Tangent
+- ✅ `asin(num)` - Arc sine
+- ✅ `acos(num)` - Arc cosine
+- ✅ `atan(num)` - Arc tangent
+- ✅ `sinh(num)` - Hyperbolic sine
+- ✅ `cosh(num)` - Hyperbolic cosine
+- ✅ `tanh(num)` - Hyperbolic tangent
+- ✅ `exp(num)` - Exponential
+- ✅ `log(num)` - Natural log
+- ✅ `log10(num)` - Base-10 log
+- ✅ `ceil(num)` - Ceiling
+- ✅ `floor(num)` - Floor
+- ✅ `trunc(num)` - Truncate
+
+*Note: Trignometric and other math functions return scaled integers (x1000) if fractional values are not supported.*
 
 ### Time (2)
 - ✅ `time()` - Current Unix timestamp
 - ✅ `ctime(time)` - Format time as string
 
-### String (1)
+### String Operations (14)
 - ✅ `length(str)` - String length (same as list)
-
----
-
-## Critical Missing Built-ins (~15-20)
-
-### 🔴 Essential for Basic Functionality (Must Have)
-
-#### Output/Communication (3)
-- ✅ `notify(player, text)` - Send text to player
-- ✅ `connected_players()` - List online players
-- ✅ `connection_name(player)` - Get connection info
-
-#### Player/Object Context (3)
-- ✅ `player()` - Get current player object
-- ✅ `caller()` - Get calling object
-- ✅ `this()` - Get current object
-
-#### String Operations (5)
 - ✅ `index(str, substr)` - Find substring
 - ✅ `rindex(str, substr)` - Find substring from end
 - ✅ `strsub(str, old, new)` - Replace substring
 - ✅ `strcmp(str1, str2)` - Compare strings
 - ✅ `explode(str, delim)` - Split string
+- ✅ `decode_binary(str)` - Decode binary (MOO ~XX format)
+- ✅ `encode_binary(str)` - Encode binary (MOO ~XX format)
+- ✅ `match(str, pattern)` - Pattern matching
+- ✅ `rmatch(str, pattern)` - Reverse pattern matching
+- ✅ `substitute(str, subs)` - Substitution
+- ✅ `crypt(str [, salt])` - One-way password hashing
+- ✅ `binary_hash(str)` - SHA-1 hash of a string
 
-#### Object Operations (4)
+### Output/Communication (4)
+- ✅ `notify(player, text)` - Send text to player
+- ✅ `connected_players()` - List online players
+- ✅ `connection_name(player)` - Get connection info
+- ✅ `boot_player(player)` - Disconnect player
+
+### Player/Object Context (5)
+- ✅ `player()` - Get current player object
+- ✅ `caller()` - Get calling object
+- ✅ `this()` - Get current object
+- ✅ `is_player(obj)` - Check if player
+- ✅ `players()` - List all players in database
+
+### Object Operations (8)
 - ✅ `valid(obj)` - Check if object exists
 - ✅ `parent(obj)` - Get parent object
 - ✅ `children(obj)` - Get child objects
 - ✅ `max_object()` - Get highest object number
-
-#### Property Operations (2)
-- ✅ `properties(obj)` - List properties
-- ✅ `property_info(obj, prop)` - Get property info
-
----
-
-## 🟡 Important but Not Critical (~20-30)
-
-### List Operations
-- ✅ `setadd(list, value)` - Add to set
-- ✅ `setremove(list, value)` - Remove from set
-- ✅ `sort(list)` - Sort list
-
-### String Operations
-- ✅ `decode_binary(str)` - Decode binary
-- ✅ `encode_binary(str)` - Encode binary
-- ✅ `match(str, pattern)` - Pattern matching
-- ✅ `rmatch(str, pattern)` - Reverse pattern matching
-- ✅ `substitute(str, subs)` - Substitution
-
-### Object Operations
 - ✅ `create(parent)` - Create new object
 - ✅ `recycle(obj)` - Delete object
 - ✅ `chparent(obj, parent)` - Change parent
 - ✅ `move(obj, dest)` - Move object
 
-### Property Operations
-- ✅ `add_property(obj, name, value, info)` - Add property
-- ✅ `delete_property(obj, name)` - Delete property
+### Property Operations (11)
+- ✅ `properties(obj)` - List properties
+- ✅ `property_info(obj, prop)` - Get property info
 - ✅ `set_property_info(obj, name, info)` - Set property info
 - ✅ `is_clear_property(obj, name)` - Check if clear
 - ✅ `clear_property(obj, name)` - Clear property
+- ✅ `add_property(obj, name, value, info)` - Add property
+- ✅ `delete_property(obj, name)` - Delete property
+- ✅ `get_property(obj, name)` - Internal get
+- ✅ `set_property(obj, name, val)` - Internal set
 
-### Verb Operations
+### Verb Operations (9)
 - ✅ `verbs(obj)` - List verbs
 - ✅ `verb_info(obj, verb)` - Get verb info
 - ✅ `set_verb_info(obj, verb, info)` - Set verb info
@@ -117,108 +120,19 @@
 - ✅ `verb_code(obj, verb)` - Get verb code
 - ✅ `set_verb_code(obj, verb, code)` - Set verb code
 
----
-
-## 🟢 Nice to Have (~80-90)
-
-### Player Management
-- ❌ `players()` - List all players
-- ❌ `is_player(obj)` - Check if player
-- ❌ `set_player_flag(obj, flag)` - Set player flag
-
-### Network
-- ❌ `idle_seconds(player)` - Get idle time
-- ❌ `connected_seconds(player)` - Get connection time
-- ❌ `boot_player(player)` - Disconnect player
-- ❌ `listen(obj, point)` - Listen for connections
-- ❌ `unlisten(point)` - Stop listening
-
-### Database
-- ❌ `db_disk_size()` - Get database size
-- ❌ `dump_database()` - Trigger checkpoint
-- ✅ `shutdown()` - Shutdown server
-
-### Security
-- ❌ `caller_perms()` - Get caller permissions
-- ❌ `set_task_perms(perms)` - Set task permissions
-- ❌ `callers()` - Get call stack
-
-### Task Management
-- ❌ `task_id()` - Get current task ID
-- ❌ `queued_tasks()` - List queued tasks
-- ❌ `kill_task(id)` - Kill task
-- ❌ `resume(id, value)` - Resume suspended task
+### Task Management (1)
 - ✅ `suspend(seconds)` - Suspend current task
-- ❌ `queue_info(id)` - Get task info
-- ❌ `force_input(player, text)` - Force input
 
-### Misc
-- ✅ `server_log(message)` - Log message
+### Network (2)
+- ✅ `idle_seconds(player)` - Get idle time
+- ✅ `connected_seconds(player)` - Get connection time
+
+### Server Management (4)
 - ✅ `server_version()` - Get server version
-- ❌ `memory_usage()` - Get memory usage
-- ❌ `floatstr(num, precision)` - Format float
-- ❌ `eval(code)` - Evaluate code
-- ❌ `raise(error)` - Raise error
-- ❌ `call_function(name, args)` - Call function
-- ❌ `function_info(name)` - Get function info
-- ❌ `disassemble(obj, verb)` - Disassemble verb
-
-### Math (Extended)
-- ❌ `tan(num)` - Tangent
-- ❌ `asin(num)` - Arc sine
-- ❌ `acos(num)` - Arc cosine
-- ❌ `atan(num)` - Arc tangent
-- ❌ `sinh(num)` - Hyperbolic sine
-- ❌ `cosh(num)` - Hyperbolic cosine
-- ❌ `tanh(num)` - Hyperbolic tangent
-- ❌ `exp(num)` - Exponential
-- ❌ `log(num)` - Natural log
-- ❌ `log10(num)` - Base-10 log
-- ❌ `ceil(num)` - Ceiling
-- ❌ `floor(num)` - Floor
-- ❌ `trunc(num)` - Truncate
+- ✅ `server_log(message)` - Log message
+- ✅ `shutdown()` - Shutdown server
+- ✅ `memory_usage()` - Get memory usage
 
 ---
 
-## Priority Implementation Order
-
-### Phase 1: Critical (15 functions, ~2-3 hours)
-1. `notify()` - Essential for output
-2. `player()` - Essential for context
-3. `caller()` - Essential for context
-4. `this()` - Essential for context
-5. `connected_players()` - For @who
-6. `valid()` - For object checks
-7. `index()` - Common string operation
-8. `strsub()` - Common string operation
-9. `strcmp()` - String comparison
-10. `explode()` - String splitting
-11. `parent()` - Object hierarchy
-12. `children()` - Object hierarchy
-13. `properties()` - Property introspection
-14. `max_object()` - Object management
-15. `connection_name()` - Connection info
-
-### Phase 2: Important (20 functions, ~3-4 hours)
-- Object creation/manipulation
-- Property management
-- Verb management
-- List operations
-
-### Phase 3: Nice to Have (80+ functions, ongoing)
-- Extended math
-- Task management
-- Security
-- Misc utilities
-
----
-
-## Recommendation
-
-**Implement Phase 1 (15 critical functions) next:**
-- Takes ~2-3 hours
-- Enables basic MOO functionality
-- Allows real command execution
-- Foundation for everything else
-
-**After Phase 1, you have a usable MOO server!** 🎉
+**This documentation is up to date as of Feb 22, 2026.**

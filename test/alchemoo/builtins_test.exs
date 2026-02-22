@@ -233,4 +233,72 @@ defmodule Alchemoo.BuiltinsTest do
     Builtins.call(:clear_property, [obj, prop])
     assert Builtins.call(:is_clear_property, [obj, prop]) == Value.num(1)
   end
+
+  test "is_player checks USER flag" do
+    # Object #2 is wizard, should be a player
+    assert Builtins.call(:is_player, [Value.obj(2)]) == Value.num(1)
+    # Object #0 is system object, should NOT be a player
+    assert Builtins.call(:is_player, [Value.obj(0)]) == Value.num(0)
+  end
+
+  test "players returns list of all players" do
+    {:list, players} = Builtins.call(:players, [])
+    assert is_list(players)
+    assert Value.obj(2) in players
+  end
+
+  test "memory_usage returns a number" do
+    {:num, usage} = Builtins.call(:memory_usage, [])
+    assert usage > 0
+  end
+
+  test "extended math functions work" do
+    # These return scaled integers (x1000)
+    assert Builtins.call(:tan, [Value.num(0)]) == Value.num(0)
+    assert Builtins.call(:exp, [Value.num(0)]) == Value.num(1000)
+    assert Builtins.call(:log, [Value.num(1)]) == Value.num(0)
+    assert Builtins.call(:log10, [Value.num(10)]) == Value.num(1000)
+
+    # identity functions for integers
+    assert Builtins.call(:ceil, [Value.num(5)]) == Value.num(5)
+    assert Builtins.call(:floor, [Value.num(5)]) == Value.num(5)
+    assert Builtins.call(:trunc, [Value.num(5)]) == Value.num(5)
+
+    # hyperbolic
+    assert Builtins.call(:sinh, [Value.num(0)]) == Value.num(0)
+    assert Builtins.call(:cosh, [Value.num(0)]) == Value.num(1000)
+    assert Builtins.call(:tanh, [Value.num(0)]) == Value.num(0)
+  end
+
+  test "tonum is alias for toint" do
+    assert Builtins.call(:tonum, [Value.str("42")]) == Value.num(42)
+  end
+
+  test "crypt and binary_hash" do
+    {:str, hash1} = Builtins.call(:crypt, [Value.str("password"), Value.str("ab")])
+    {:str, hash2} = Builtins.call(:crypt, [Value.str("password"), Value.str("ab")])
+    assert hash1 == hash2
+
+    {:str, sha1} = Builtins.call(:binary_hash, [Value.str("hello")])
+    assert String.length(sha1) == 40
+  end
+
+  test "binary encoding and decoding" do
+    # Encode newline
+    {:str, encoded} = Builtins.call(:encode_binary, [Value.str("a\nb")])
+    assert encoded =~ "~0A"
+
+    # Decode it back
+    assert Builtins.call(:decode_binary, [Value.str(encoded)]) == Value.str("a\nb")
+
+    # Literal ~
+    assert Builtins.call(:encode_binary, [Value.str("a~b")]) == Value.str("a~~b")
+    assert Builtins.call(:decode_binary, [Value.str("a~~b")]) == Value.str("a~b")
+  end
+
+  test "connection built-ins return error for invalid player" do
+    assert Builtins.call(:idle_seconds, [Value.obj(999)]) == Value.err(:E_INVARG)
+    assert Builtins.call(:connected_seconds, [Value.obj(999)]) == Value.err(:E_INVARG)
+    assert Builtins.call(:boot_player, [Value.obj(999)]) == Value.num(0)
+  end
 end

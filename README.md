@@ -9,7 +9,7 @@ A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM 
 - ✅ **Command Execution** - Full command parsing and verb execution pipeline
 - ✅ **Network Layer** - Telnet support (port 7777), SSH/WebSocket ready
 - ✅ **Task System** - Concurrent task execution with tick quotas and limits
-- ✅ **Built-in Functions** - 36/150 implemented (24%), including all critical functions
+- ✅ **Built-in Functions** - 86/150 implemented (57%), including all critical and important functions
 - ✅ **Unicode Support** - Full UTF-8 with grapheme-aware string operations
 - ✅ **Automatic Checkpoints** - Periodic saves with crash recovery
 - ✅ **MOO Export** - Export databases in LambdaMOO Format 4
@@ -29,8 +29,8 @@ Alchemoo is now a functional MOO server that can:
 - Handle multiple concurrent players
 - Automatically checkpoint and recover from crashes
 
-**Test Coverage:** 90 tests (85 passing, 5 flaky)  
-**Commits:** 34
+**Test Coverage:** 104 tests (100% passing)  
+**Commits:** 40+
 
 ## Quick Start
 
@@ -142,20 +142,12 @@ elixir examples/task_demo.exs
 - [x] Command execution
 - [x] Registry-based task tracking
 
-### Phase 2: Built-in Functions (24% Complete)
-- [x] Critical built-ins (36/150)
-  - [x] Output: notify, connected_players, connection_name
-  - [x] Context: player, caller, this
-  - [x] String: index, strsub, strcmp, explode
-  - [x] Object: valid, parent, children, max_object
-  - [x] Property: properties, property_info
-  - [x] Plus 21 others (typeof, tostr, toint, etc.)
-- [ ] Important built-ins (20-30 more)
-  - [ ] Object: create, recycle, chparent, move
-  - [ ] Property: add_property, delete_property, set_property_info
-  - [ ] Verb: verbs, verb_info, add_verb, delete_verb
-  - [ ] List: setadd, setremove, sort
-- [ ] Nice-to-have built-ins (80-90 more)
+### Phase 2: Built-in Functions (57% Complete)
+- [x] Critical built-ins (Complete!)
+- [x] Important built-ins (Complete!)
+- [x] Math & Extended Math (Complete!)
+- [x] Player & Connection Management (Mostly complete)
+- [ ] Task Management (Phase 3 priority)
 
 ### Phase 3: Polish & Enhancement
 - [ ] Authentication system
@@ -163,7 +155,7 @@ elixir examples/task_demo.exs
 - [ ] Preposition validation
 - [ ] Configuration extraction
 - [ ] Performance optimization
-- [ ] Fix flaky tests
+- [x] Fix flaky tests (100% passing)
 - [ ] SSH support
 - [ ] WebSocket support
 

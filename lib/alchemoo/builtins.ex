@@ -5,6 +5,7 @@ defmodule Alchemoo.Builtins do
   Implements the standard LambdaMOO built-in functions.
   """
   require Logger
+  import Bitwise
 
   alias Alchemoo.Connection.Handler
   alias Alchemoo.Connection.Supervisor, as: ConnSupervisor
@@ -22,6 +23,7 @@ defmodule Alchemoo.Builtins do
   def call(:typeof, args), do: typeof(args)
   def call(:tostr, args), do: tostr(args)
   def call(:toint, args), do: toint(args)
+  def call(:tonum, args), do: toint(args)
   def call(:toobj, args), do: toobj(args)
   def call(:toliteral, args), do: toliteral(args)
 
@@ -47,6 +49,19 @@ defmodule Alchemoo.Builtins do
   def call(:sqrt, args), do: sqrt_fn(args)
   def call(:sin, args), do: sin_fn(args)
   def call(:cos, args), do: cos_fn(args)
+  def call(:tan, args), do: tan_fn(args)
+  def call(:sinh, args), do: sinh_fn(args)
+  def call(:cosh, args), do: cosh_fn(args)
+  def call(:tanh, args), do: tanh_fn(args)
+  def call(:asin, args), do: asin_fn(args)
+  def call(:acos, args), do: acos_fn(args)
+  def call(:atan, args), do: atan_fn(args)
+  def call(:exp, args), do: exp_fn(args)
+  def call(:log, args), do: log_fn(args)
+  def call(:log10, args), do: log10_fn(args)
+  def call(:ceil, args), do: ceil_fn(args)
+  def call(:floor, args), do: floor_fn(args)
+  def call(:trunc, args), do: trunc_fn(args)
 
   # Time
   def call(:time, args), do: time_fn(args)
@@ -56,11 +71,14 @@ defmodule Alchemoo.Builtins do
   def call(:notify, args), do: notify(args)
   def call(:connected_players, args), do: connected_players(args)
   def call(:connection_name, args), do: connection_name(args)
+  def call(:boot_player, args), do: boot_player(args)
 
   # Context
   def call(:player, args), do: player_fn(args)
   def call(:caller, args), do: caller_fn(args)
   def call(:this, args), do: this_fn(args)
+  def call(:is_player, args), do: is_player(args)
+  def call(:players, args), do: players_fn(args)
 
   # String operations
   def call(:index, args), do: index_fn(args)
@@ -73,6 +91,8 @@ defmodule Alchemoo.Builtins do
   def call(:rmatch, args), do: rmatch_fn(args)
   def call(:decode_binary, args), do: decode_binary(args)
   def call(:encode_binary, args), do: encode_binary(args)
+  def call(:crypt, args), do: crypt(args)
+  def call(:binary_hash, args), do: binary_hash(args)
 
   # Object operations
   def call(:valid, args), do: valid(args)
@@ -113,10 +133,15 @@ defmodule Alchemoo.Builtins do
   # Task management
   def call(:suspend, args), do: suspend_fn(args)
 
+  # Network
+  def call(:idle_seconds, args), do: idle_seconds(args)
+  def call(:connected_seconds, args), do: connected_seconds(args)
+
   # Server management
   def call(:server_version, args), do: server_version(args)
   def call(:server_log, args), do: server_log(args)
   def call(:shutdown, args), do: shutdown(args)
+  def call(:memory_usage, args), do: memory_usage(args)
 
   # Default
   def call(_name, _args), do: {:err, :E_VERBNF}
@@ -303,6 +328,27 @@ defmodule Alchemoo.Builtins do
   end
 
   defp cos_fn(_), do: Value.err(:E_ARGS)
+
+  # sinh(number) - hyperbolic sine
+  defp sinh_fn([{:num, n}]) do
+    Value.num(trunc(:math.sinh(n) * 1000))
+  end
+
+  defp sinh_fn(_), do: Value.err(:E_ARGS)
+
+  # cosh(number) - hyperbolic cosine
+  defp cosh_fn([{:num, n}]) do
+    Value.num(trunc(:math.cosh(n) * 1000))
+  end
+
+  defp cosh_fn(_), do: Value.err(:E_ARGS)
+
+  # tanh(number) - hyperbolic tangent
+  defp tanh_fn([{:num, n}]) do
+    Value.num(trunc(:math.tanh(n) * 1000))
+  end
+
+  defp tanh_fn(_), do: Value.err(:E_ARGS)
 
   # time() - current unix timestamp
   defp time_fn([]) do
@@ -1209,21 +1255,73 @@ defmodule Alchemoo.Builtins do
     moo_indices ++ padding
   end
 
-  # decode_binary(str) - decode binary string
+  # decode_binary(str) - decode binary string (MOO ~XX format)
   defp decode_binary([{:str, str}]) do
-    # Simple for now - just return the string
-    Value.str(str)
+    try do
+      decoded = do_decode_binary(str)
+      Value.str(decoded)
+    rescue
+      _ -> Value.err(:E_INVARG)
+    end
   end
 
   defp decode_binary(_), do: Value.err(:E_ARGS)
 
-  # encode_binary(str) - encode to binary string
+  defp do_decode_binary(str) do
+    Regex.replace(~r/~([0-9A-Fa-f]{2}|~)/, str, fn _, match ->
+      case match do
+        "~" -> "~"
+        hex ->
+          <<byte>> = Base.decode16!(String.upcase(hex))
+          <<byte>>
+      end
+    end)
+  end
+
+  # encode_binary(str) - encode to binary string (MOO ~XX format)
   defp encode_binary([{:str, str}]) do
-    # Simple for now - just return the string
-    Value.str(str)
+    encoded =
+      str
+      |> String.to_charlist()
+      |> Enum.map_join(fn
+        char when char in ?\s..?~ and char != ?~ -> <<char>>
+        ?~ -> "~~"
+        char -> "~" <> Base.encode16(<<char>>)
+      end)
+
+    Value.str(encoded)
   end
 
   defp encode_binary(_), do: Value.err(:E_ARGS)
+
+  # crypt(string [, salt]) - one-way hashing
+  defp crypt([{:str, text}]) do
+    # Generate a random 2-character salt if not provided
+    salt =
+      for _ <- 1..2, into: "", do: <<Enum.random(?a..?z)>>
+
+    crypt([Value.str(text), Value.str(salt)])
+  end
+
+  defp crypt([{:str, text}, {:str, salt}]) do
+    # MOO crypt traditionally uses crypt(3)
+    # We'll use a SHA-256 hash prefixed with the salt as a modern alternative
+    # since standard crypt(3) is not built into Elixir/Erlang.
+    hash = :crypto.hash(:sha256, salt <> text) |> Base.encode16(case: :lower)
+    # Traditional MOO crypt only returns a short string, but we'll return more for security
+    # though we should probably stick to a format that looks like what MOO expects if possible.
+    Value.str(salt <> String.slice(hash, 0, 10))
+  end
+
+  defp crypt(_), do: Value.err(:E_ARGS)
+
+  # binary_hash(string) - SHA-1 hash of a string
+  defp binary_hash([{:str, str}]) do
+    hash = :crypto.hash(:sha, str) |> Base.encode16(case: :lower)
+    Value.str(hash)
+  end
+
+  defp binary_hash(_), do: Value.err(:E_ARGS)
 
   ## List Operations
 
@@ -1292,4 +1390,120 @@ defmodule Alchemoo.Builtins do
   end
 
   defp shutdown(_), do: Value.err(:E_ARGS)
+
+  # boot_player(player) - disconnect player
+  defp boot_player([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        Handler.close(handler_pid)
+        Value.num(1)
+
+      {:error, _} ->
+        Value.num(0)
+    end
+  end
+
+  defp boot_player(_), do: Value.err(:E_ARGS)
+
+  # is_player(obj) - check if object is a player
+  defp is_player([{:obj, obj_id}]) do
+    case DBServer.get_object(obj_id) do
+      {:ok, obj} ->
+        # Bit 0 is USER/PLAYER flag
+        case (obj.flags &&& 1) != 0 do
+          true -> Value.num(1)
+          false -> Value.num(0)
+        end
+
+      {:error, _} ->
+        Value.num(0)
+    end
+  end
+
+  defp is_player(_), do: Value.err(:E_ARGS)
+
+  # players() - list all player objects in database
+  defp players_fn([]) do
+    # This is expensive, but for small MOOs it's okay
+    # We should ideally have a player registry in DBServer
+    db = DBServer.get_snapshot()
+
+    player_ids =
+      db.objects
+      |> Map.values()
+      |> Enum.filter(fn obj -> (obj.flags &&& 1) != 0 end)
+      |> Enum.map(fn obj -> Value.obj(obj.id) end)
+
+    Value.list(player_ids)
+  end
+
+  defp players_fn(_), do: Value.err(:E_ARGS)
+
+  # idle_seconds(player) - get idle time
+  defp idle_seconds([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        info = Handler.info(handler_pid)
+        Value.num(info.idle_seconds)
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp idle_seconds(_), do: Value.err(:E_ARGS)
+
+  # connected_seconds(player) - get connection time
+  defp connected_seconds([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        info = Handler.info(handler_pid)
+        Value.num(System.system_time(:second) - info.connected_at)
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp connected_seconds(_), do: Value.err(:E_ARGS)
+
+  # memory_usage() - get memory usage
+  defp memory_usage([]) do
+    usage = :erlang.memory(:total)
+    Value.num(usage)
+  end
+
+  defp memory_usage(_), do: Value.err(:E_ARGS)
+
+  # Extended Math
+
+  defp tan_fn([{:num, n}]), do: Value.num(trunc(:math.tan(n) * 1000))
+  defp tan_fn(_), do: Value.err(:E_ARGS)
+
+  defp asin_fn([{:num, n}]), do: Value.num(trunc(:math.asin(n) * 1000))
+  defp asin_fn(_), do: Value.err(:E_ARGS)
+
+  defp acos_fn([{:num, n}]), do: Value.num(trunc(:math.acos(n) * 1000))
+  defp acos_fn(_), do: Value.err(:E_ARGS)
+
+  defp atan_fn([{:num, n}]), do: Value.num(trunc(:math.atan(n) * 1000))
+  defp atan_fn(_), do: Value.err(:E_ARGS)
+
+  defp exp_fn([{:num, n}]), do: Value.num(trunc(:math.exp(n) * 1000))
+  defp exp_fn(_), do: Value.err(:E_ARGS)
+
+  defp log_fn([{:num, n}]) when n > 0, do: Value.num(trunc(:math.log(n) * 1000))
+  defp log_fn(_), do: Value.err(:E_ARGS)
+
+  defp log10_fn([{:num, n}]) when n > 0, do: Value.num(trunc(:math.log10(n) * 1000))
+  defp log10_fn(_), do: Value.err(:E_ARGS)
+
+  defp ceil_fn([{:num, n}]), do: Value.num(n)
+  defp ceil_fn(_), do: Value.err(:E_ARGS)
+
+  defp floor_fn([{:num, n}]), do: Value.num(n)
+  defp floor_fn(_), do: Value.err(:E_ARGS)
+
+  defp trunc_fn([{:num, n}]), do: Value.num(n)
+  defp trunc_fn(_), do: Value.err(:E_ARGS)
 end
