@@ -3,12 +3,12 @@
 ## Summary
 
 - **Total MOO Built-ins:** ~150
-- **Implemented:** 92
-- **Remaining:** ~58
+- **Implemented:** 98
+- **Remaining:** ~52
 - **Critical for basic functionality:** Complete! ✅
 - **Important for advanced functionality:** Complete! ✅
 
-## Implemented (92)
+## Implemented (98)
 
 ### Type Conversion (6)
 - ✅ `typeof(value)` - Get type
@@ -120,8 +120,14 @@
 - ✅ `verb_code(obj, verb)` - Get verb code
 - ✅ `set_verb_code(obj, verb, code)` - Set verb code
 
-### Task Management (1)
+### Task Management (7)
 - ✅ `suspend(seconds)` - Suspend current task
+- ✅ `task_id()` - Get current task ID
+- ✅ `queued_tasks()` - List all queued/suspended tasks
+- ✅ `kill_task(id)` - Terminate specific task
+- ✅ `raise(error)` - Raise a MOO error
+- ✅ `call_function(name, args...)` - Dynamically call a built-in function
+- ✅ `eval(string)` - Synchronously evaluate MOO code
 
 ### Network (2)
 - ✅ `idle_seconds(player)` - Get idle time

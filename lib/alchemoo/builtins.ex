@@ -132,6 +132,12 @@ defmodule Alchemoo.Builtins do
 
   # Task management
   def call(:suspend, args), do: suspend_fn(args)
+  def call(:task_id, args), do: task_id(args)
+  def call(:queued_tasks, args), do: queued_tasks(args)
+  def call(:kill_task, args), do: kill_task(args)
+  def call(:raise, args), do: raise_fn(args)
+  def call(:call_function, args), do: call_function(args)
+  def call(:eval, args), do: eval_fn(args)
 
   # Network
   def call(:idle_seconds, args), do: idle_seconds(args)
@@ -168,6 +174,92 @@ defmodule Alchemoo.Builtins do
   end
 
   defp suspend_fn(_), do: Value.err(:E_ARGS)
+
+  # task_id() - get current task ID (integer)
+  defp task_id([]) do
+    case get_task_context(:id) do
+      nil -> Value.num(0)
+      id when is_reference(id) ->
+        # Convert reference to integer for MOO
+        Value.num(:erlang.phash2(id))
+      id when is_integer(id) -> Value.num(id)
+    end
+  end
+
+  defp task_id(_), do: Value.err(:E_ARGS)
+
+  # queued_tasks() - list all queued/suspended tasks
+  defp queued_tasks([]) do
+    tasks = Alchemoo.Task.list_tasks()
+    # MOO expects a list of task IDs
+    # Our list_tasks returns [{id, pid, metadata}]
+    ids = Enum.map(tasks, fn {id, _pid, _meta} ->
+      Value.num(:erlang.phash2(id))
+    end)
+    Value.list(ids)
+  end
+
+  defp queued_tasks(_), do: Value.err(:E_ARGS)
+
+  # kill_task(id) - terminate task
+  defp kill_task([{:num, target_id}]) do
+    tasks = Alchemoo.Task.list_tasks()
+    found = Enum.find(tasks, fn {id, _pid, _meta} -> :erlang.phash2(id) == target_id end)
+
+    case found do
+      {_id, pid, _meta} ->
+        # Stop the task process
+        GenServer.stop(pid, :normal)
+        Value.num(1)
+      nil ->
+        # Task not found - this is E_INVARG in MOO
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp kill_task(_), do: Value.err(:E_ARGS)
+
+  # raise(error [, message [, value]]) - raise a MOO error
+  defp raise_fn([{:err, error}]) do
+    throw({:error, error})
+  end
+
+  defp raise_fn([{:err, _error}, {:str, message} | _]) do
+    # For now, just raise the error code - message/value support can be added to the Task module later
+    throw({:error, Value.str(message)})
+  end
+
+  defp raise_fn(_), do: Value.err(:E_ARGS)
+
+  # call_function(name, args...) - dynamically call a built-in function
+  defp call_function([{:str, name} | args]) do
+    # Dispatch to the public call/2 function
+    call(String.to_atom(name), args)
+  rescue
+    _ -> Value.err(:E_VERBNF)
+  end
+
+  defp call_function(_), do: Value.err(:E_ARGS)
+
+  # eval(string) - evaluate MOO code synchronously
+  defp eval_fn([{:str, code}]) do
+    # Run the code in a new task but synchronously
+    # Inherit current context (this, player, caller)
+    # Convert context map to keyword list for Task.run
+    context_map = Process.get(:task_context) || %{}
+    opts = Enum.into(context_map, [])
+    
+    case Alchemoo.Task.run(code, %{}, opts) do
+      {:ok, result} ->
+        # MOO eval returns {success, value}
+        Value.list([Value.num(1), result])
+      {:error, reason} ->
+        # MOO eval returns {0, error_message}
+        Value.list([Value.num(0), Value.str(inspect(reason))])
+    end
+  end
+
+  defp eval_fn(_), do: Value.err(:E_ARGS)
 
   # tostr(values...) - convert to string
   defp tostr(args) do

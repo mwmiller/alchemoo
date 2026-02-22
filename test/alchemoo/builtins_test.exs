@@ -301,4 +301,34 @@ defmodule Alchemoo.BuiltinsTest do
     assert Builtins.call(:connected_seconds, [Value.obj(999)]) == Value.err(:E_INVARG)
     assert Builtins.call(:boot_player, [Value.obj(999)]) == Value.num(0)
   end
+
+  test "task_id returns a number" do
+    # When no context, it defaults to 0
+    assert Builtins.call(:task_id, []) == Value.num(0)
+
+    # When context is set
+    Process.put(:task_context, %{id: make_ref()})
+    {:num, id} = Builtins.call(:task_id, [])
+    assert id > 0
+    Process.delete(:task_context)
+  end
+
+  test "call_function dynamically calls built-ins" do
+    # Call tostr(42) via call_function
+    result = Builtins.call(:call_function, [Value.str("tostr"), Value.num(42)])
+    assert result == Value.str("42")
+
+    # Call with error
+    assert Builtins.call(:call_function, [Value.str("invalid")]) == Value.err(:E_VERBNF)
+  end
+
+  test "eval evaluates MOO code" do
+    # Eval simple expression
+    result = Builtins.call(:eval, [Value.str("return 2 + 2;")])
+    assert result == Value.list([Value.num(1), Value.num(4)])
+
+    # Eval with error
+    result = Builtins.call(:eval, [Value.str("invalid syntax")])
+    assert match?({:list, [{:num, 0}, {:str, _}]}, result)
+  end
 end
