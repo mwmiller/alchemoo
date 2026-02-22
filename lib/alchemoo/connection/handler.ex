@@ -95,7 +95,8 @@ defmodule Alchemoo.Connection.Handler do
       connected_at: conn.connected_at,
       last_activity: conn.last_activity,
       idle_seconds: System.system_time(:second) - conn.last_activity,
-      state: conn.state
+      state: conn.state,
+      output_queue_length: Enum.reduce(conn.output_queue, 0, &(&2 + String.length(&1)))
     }
 
     {:reply, info, conn}

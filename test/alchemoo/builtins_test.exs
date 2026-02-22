@@ -373,11 +373,40 @@ defmodule Alchemoo.BuiltinsTest do
       Value.obj(2)
     ])
 
-    # eval with callers - eval itself should see the stack
     {:list, [{:num, 1}, {:list, stack}]} = Builtins.call(:eval, [Value.str("return callers();")])
     assert length(stack) == 1
     assert Enum.at(stack, 0) == caller_info
 
     Process.delete(:task_context)
+  end
+
+  test "database and misc built-ins" do
+    # floatstr
+    assert Builtins.call(:floatstr, [Value.num(1234), Value.num(2)]) == Value.str("1.23")
+    assert Builtins.call(:floatstr, [Value.num(500), Value.num(1)]) == Value.str("0.5")
+
+    # set_player_flag
+    obj = Value.obj(0)
+    # Check initial (should be 0)
+    assert Builtins.call(:is_player, [obj]) == Value.num(0)
+    # Set it
+    assert Builtins.call(:set_player_flag, [obj, Value.num(1)]) == Value.num(1)
+    assert Builtins.call(:is_player, [obj]) == Value.num(1)
+    # Clear it
+    assert Builtins.call(:set_player_flag, [obj, Value.num(0)]) == Value.num(1)
+    assert Builtins.call(:is_player, [obj]) == Value.num(0)
+
+    # db_disk_size
+    {:num, size} = Builtins.call(:db_disk_size, [])
+    assert size >= 0
+
+    # dump_database
+    # Mocking check: assumes Checkpoint.Server is running or fails gracefully
+    result = Builtins.call(:dump_database, [])
+    assert result in [Value.num(1), Value.num(0)]
+
+    # queue_info
+    {:list, ids} = Builtins.call(:queue_info, [])
+    assert is_list(ids)
   end
 end

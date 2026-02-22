@@ -114,6 +114,10 @@ defmodule Alchemoo.Database.Server do
     GenServer.call(__MODULE__, {:set_verb_args, obj_id, verb_name, args})
   end
 
+  def set_player_flag(obj_id, flag) when is_integer(obj_id) and is_boolean(flag) do
+    GenServer.call(__MODULE__, {:set_player_flag, obj_id, flag})
+  end
+
   def is_clear_property?(obj_id, prop_name) when is_binary(prop_name) do
     GenServer.call(__MODULE__, {:is_clear_property, obj_id, prop_name})
   end
@@ -393,6 +397,30 @@ defmodule Alchemoo.Database.Server do
       case get_object(obj_id) do
         {:ok, object} -> perform_set_verb_args(obj_id, object, verb_name, args)
         error -> error
+      end
+
+    {:reply, result, state}
+  end
+
+  @impl true
+  def handle_call({:set_player_flag, obj_id, flag}, _from, state) do
+    import Bitwise
+
+    result =
+      case get_object(obj_id) do
+        {:ok, object} ->
+          new_flags =
+            case flag do
+              true -> object.flags ||| 1
+              false -> object.flags &&& bnot(1)
+            end
+
+          new_object = %{object | flags: new_flags}
+          :ets.insert(@table, {obj_id, new_object})
+          :ok
+
+        error ->
+          error
       end
 
     {:reply, result, state}

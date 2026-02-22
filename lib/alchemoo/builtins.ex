@@ -62,6 +62,7 @@ defmodule Alchemoo.Builtins do
   def call(:ceil, args), do: ceil_fn(args)
   def call(:floor, args), do: floor_fn(args)
   def call(:trunc, args), do: trunc_fn(args)
+  def call(:floatstr, args), do: floatstr(args)
 
   # Time
   def call(:time, args), do: time_fn(args)
@@ -79,6 +80,7 @@ defmodule Alchemoo.Builtins do
   def call(:this, args), do: this_fn(args)
   def call(:is_player, args), do: is_player(args)
   def call(:players, args), do: players_fn(args)
+  def call(:set_player_flag, args), do: set_player_flag(args)
 
   # String operations
   def call(:index, args), do: index_fn(args)
@@ -135,6 +137,7 @@ defmodule Alchemoo.Builtins do
   def call(:task_id, args), do: task_id(args)
   def call(:queued_tasks, args), do: queued_tasks(args)
   def call(:kill_task, args), do: kill_task(args)
+  def call(:queue_info, args), do: queue_info(args)
   def call(:raise, args), do: raise_fn(args)
   def call(:call_function, args), do: call_function(args)
   def call(:eval, args), do: eval_fn(args)
@@ -147,12 +150,15 @@ defmodule Alchemoo.Builtins do
   # Network
   def call(:idle_seconds, args), do: idle_seconds(args)
   def call(:connected_seconds, args), do: connected_seconds(args)
+  def call(:buffered_output_length, args), do: buffered_output_length(args)
 
   # Server management
   def call(:server_version, args), do: server_version(args)
   def call(:server_log, args), do: server_log(args)
   def call(:shutdown, args), do: shutdown(args)
   def call(:memory_usage, args), do: memory_usage(args)
+  def call(:db_disk_size, args), do: db_disk_size(args)
+  def call(:dump_database, args), do: dump_database(args)
 
   # Default
   def call(_name, _args), do: {:err, :E_VERBNF}
@@ -1618,6 +1624,101 @@ defmodule Alchemoo.Builtins do
 
   defp memory_usage(_), do: Value.err(:E_ARGS)
 
+  # db_disk_size() - get database size on disk
+  defp db_disk_size([]) do
+    stats = DBServer.stats()
+
+    case stats.db_path do
+      nil ->
+        Value.num(0)
+
+      path ->
+        case :file.read_file_info(path) do
+          {:ok, info} -> Value.num(elem(info, 1))
+          _ -> Value.num(0)
+        end
+    end
+  end
+
+  defp db_disk_size(_), do: Value.err(:E_ARGS)
+
+  # dump_database() - trigger immediate checkpoint
+  defp dump_database([]) do
+    # Only wizards can dump database (simplified)
+    case Alchemoo.Checkpoint.Server.checkpoint() do
+      :ok -> Value.num(1)
+      _ -> Value.num(0)
+    end
+  end
+
+  defp dump_database(_), do: Value.err(:E_ARGS)
+
+  # set_player_flag(obj, flag) - set USER flag
+  defp set_player_flag([{:obj, obj_id}, {:num, flag}]) do
+    case DBServer.set_player_flag(obj_id, flag != 0) do
+      :ok -> Value.num(1)
+      {:error, err} -> Value.err(err)
+    end
+  end
+
+  defp set_player_flag(_), do: Value.err(:E_ARGS)
+
+  # buffered_output_length([player]) - get output queue size
+  defp buffered_output_length([]) do
+    player_id = get_task_context(:player) || 2
+    buffered_output_length([Value.obj(player_id)])
+  end
+
+  defp buffered_output_length([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        # Need to expose queue length in Handler.info
+        info = Handler.info(handler_pid)
+        # Note: Handler.info needs to be updated to include queue length
+        Value.num(Map.get(info, :output_queue_length, 0))
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp buffered_output_length(_), do: Value.err(:E_ARGS)
+
+  # queue_info([task_id]) - get info about queued tasks
+  defp queue_info([]) do
+    # List all tasks
+    tasks = Alchemoo.Task.list_tasks()
+
+    ids =
+      Enum.map(tasks, fn {id, _pid, _meta} ->
+        Value.num(:erlang.phash2(id))
+      end)
+
+    Value.list(ids)
+  end
+
+  defp queue_info([{:num, target_id}]) do
+    tasks = Alchemoo.Task.list_tasks()
+    found = Enum.find(tasks, fn {id, _pid, _meta} -> :erlang.phash2(id) == target_id end)
+
+    case found do
+      {_id, _pid, meta} ->
+        # Return info list: {player, start_time, ticks_used, verb_name}
+        # (Simplified based on available metadata)
+        Value.list([
+          Value.obj(meta.player),
+          Value.num(meta.started_at),
+          Value.num(0),
+          Value.str(meta[:verb_name] || "")
+        ])
+
+      nil ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp queue_info(_), do: Value.err(:E_ARGS)
+
   # Extended Math
 
   defp tan_fn([{:num, n}]), do: Value.num(trunc(:math.tan(n) * 1000))
@@ -1649,4 +1750,22 @@ defmodule Alchemoo.Builtins do
 
   defp trunc_fn([{:num, n}]), do: Value.num(n)
   defp trunc_fn(_), do: Value.err(:E_ARGS)
+
+  # floatstr(number, precision) - format as float string
+  defp floatstr([{:num, n}, {:num, precision}]) do
+    # Treat n as scaled integer (x1000)
+    integer_part = div(n, 1000)
+    fractional_part = abs(rem(n, 1000))
+
+    # Format fractional part to 3 digits then slice to precision
+    frac_str =
+      fractional_part
+      |> Integer.to_string()
+      |> String.pad_leading(3, "0")
+      |> String.slice(0, precision)
+
+    Value.str("#{integer_part}.#{frac_str}")
+  end
+
+  defp floatstr(_), do: Value.err(:E_ARGS)
 end

@@ -3,12 +3,12 @@
 ## Summary
 
 - **Total MOO Built-ins:** ~150
-- **Implemented:** 98
-- **Remaining:** ~52
+- **Implemented:** 107
+- **Remaining:** ~43
 - **Critical for basic functionality:** Complete! ✅
 - **Important for advanced functionality:** Complete! ✅
 
-## Implemented (98)
+## Implemented (107)
 
 ### Type Conversion (6)
 - ✅ `typeof(value)` - Get type
@@ -60,7 +60,7 @@
 - ✅ `time()` - Current Unix timestamp
 - ✅ `ctime(time)` - Format time as string
 
-### String Operations (14)
+### String Operations (15)
 - ✅ `length(str)` - String length (same as list)
 - ✅ `index(str, substr)` - Find substring
 - ✅ `rindex(str, substr)` - Find substring from end
@@ -74,19 +74,22 @@
 - ✅ `substitute(str, subs)` - Substitution
 - ✅ `crypt(str [, salt])` - One-way password hashing
 - ✅ `binary_hash(str)` - SHA-1 hash of a string
+- ✅ `floatstr(num, precision)` - Format scaled integer as float string
 
-### Output/Communication (4)
+### Output/Communication (5)
 - ✅ `notify(player, text)` - Send text to player
 - ✅ `connected_players()` - List online players
 - ✅ `connection_name(player)` - Get connection info
 - ✅ `boot_player(player)` - Disconnect player
+- ✅ `buffered_output_length([player])` - Get output queue size
 
-### Player/Object Context (5)
+### Player/Object Context (6)
 - ✅ `player()` - Get current player object
 - ✅ `caller()` - Get calling object
 - ✅ `this()` - Get current object
 - ✅ `is_player(obj)` - Check if player
 - ✅ `players()` - List all players in database
+- ✅ `set_player_flag(obj, flag)` - Set/clear USER flag
 
 ### Object Operations (8)
 - ✅ `valid(obj)` - Check if object exists
@@ -120,7 +123,7 @@
 - ✅ `verb_code(obj, verb)` - Get verb code
 - ✅ `set_verb_code(obj, verb, code)` - Set verb code
 
-### Task Management (7)
+### Task Management (8)
 - ✅ `suspend(seconds)` - Suspend current task
 - ✅ `task_id()` - Get current task ID
 - ✅ `queued_tasks()` - List all queued/suspended tasks
@@ -128,16 +131,24 @@
 - ✅ `raise(error)` - Raise a MOO error
 - ✅ `call_function(name, args...)` - Dynamically call a built-in function
 - ✅ `eval(string)` - Synchronously evaluate MOO code
+- ✅ `queue_info(id)` - Get task metadata
+
+### Security (3)
+- ✅ `caller_perms()` - Get permissions of the calling object
+- ✅ `set_task_perms(obj)` - Set permissions for the current task
+- ✅ `callers()` - Get current call stack
 
 ### Network (2)
 - ✅ `idle_seconds(player)` - Get idle time
 - ✅ `connected_seconds(player)` - Get connection time
 
-### Server Management (4)
+### Server Management (6)
 - ✅ `server_version()` - Get server version
 - ✅ `server_log(message)` - Log message
 - ✅ `shutdown()` - Shutdown server
 - ✅ `memory_usage()` - Get memory usage
+- ✅ `db_disk_size()` - Get database file size
+- ✅ `dump_database()` - Trigger immediate checkpoint
 
 ---
 
