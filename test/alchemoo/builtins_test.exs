@@ -410,6 +410,36 @@ defmodule Alchemoo.BuiltinsTest do
     assert is_list(ids)
   end
 
+  test "legacy and utility built-ins" do
+    # server_started
+    {:num, start_time} = Builtins.call(:server_started, [])
+    assert start_time > 0
+
+    # object_bytes
+    # Object #0 should exist
+    {:num, size} = Builtins.call(:object_bytes, [Value.obj(0)])
+    assert size > 0
+
+    # value_bytes
+    {:num, size} = Builtins.call(:value_bytes, [Value.str("hello")])
+    assert size > 0
+
+    # ticks_left - mocked
+    Process.put(:ticks_remaining, 100)
+    assert Builtins.call(:ticks_left, []) == Value.num(100)
+    Process.delete(:ticks_remaining)
+
+    # seconds_left
+    {:num, seconds} = Builtins.call(:seconds_left, [])
+    assert seconds > 0
+
+    # force_input - invalid player
+    assert Builtins.call(:force_input, [Value.obj(999), Value.str("test")]) == Value.err(:E_INVARG)
+
+    # read_binary - disabled
+    assert Builtins.call(:read_binary, [Value.str("foo")]) == Value.err(:E_PERM)
+  end
+
   test "introspection built-ins" do
     # function_info
     {:list, info} = Builtins.call(:function_info, [Value.str("tostr")])

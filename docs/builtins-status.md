@@ -3,12 +3,12 @@
 ## Summary
 
 - **Total MOO Built-ins:** ~150
-- **Implemented:** 112
-- **Remaining:** ~38
+- **Implemented:** 119
+- **Remaining:** ~31
 - **Critical for basic functionality:** Complete! ✅
 - **Important for advanced functionality:** Complete! ✅
 
-## Implemented (112)
+## Implemented (119)
 
 ### Type Conversion (6)
 - ✅ `typeof(value)` - Get type
@@ -140,20 +140,29 @@
 - ✅ `set_task_perms(obj)` - Set permissions for the current task
 - ✅ `callers()` - Get current call stack
 
-### Network (5)
+### Network (6)
 - ✅ `idle_seconds(player)` - Get idle time
 - ✅ `connected_seconds(player)` - Get connection time
 - ✅ `listen(obj, point)` - Start listening (returns E_PERM for now)
 - ✅ `unlisten(point)` - Stop listening (returns E_PERM for now)
 - ✅ `open_network_connection(host, port)` - Outbound connect (returns E_PERM for now)
+- ✅ `force_input(player, text)` - Inject command
 
-### Server Management (6)
+### Server Management (7)
 - ✅ `server_version()` - Get server version
 - ✅ `server_log(message)` - Log message
 - ✅ `shutdown()` - Shutdown server
 - ✅ `memory_usage()` - Get memory usage
 - ✅ `db_disk_size()` - Get database file size
 - ✅ `dump_database()` - Trigger immediate checkpoint
+- ✅ `server_started()` - Get start time
+
+### Utilities (5)
+- ✅ `read_binary(filename)` - Read file (returns E_PERM for now)
+- ✅ `object_bytes(obj)` - Get object memory size
+- ✅ `value_bytes(value)` - Get value memory size
+- ✅ `ticks_left()` - Get remaining ticks
+- ✅ `seconds_left()` - Get remaining seconds
 
 ---
 

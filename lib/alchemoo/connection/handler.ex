@@ -49,6 +49,11 @@ defmodule Alchemoo.Connection.Handler do
     GenServer.cast(pid, :close)
   end
 
+  @doc "Force input into the connection"
+  def input(pid, text) when is_binary(text) do
+    GenServer.cast(pid, {:input, text})
+  end
+
   ## Server Callbacks
 
   @impl true
@@ -86,6 +91,13 @@ defmodule Alchemoo.Connection.Handler do
   @impl true
   def handle_cast(:close, conn) do
     {:stop, :normal, conn}
+  end
+
+  @impl true
+  def handle_cast({:input, text}, conn) do
+    # Process forced input as if it came from the socket
+    new_conn = process_input(conn, text)
+    {:noreply, new_conn}
   end
 
   @impl true

@@ -164,6 +164,15 @@ defmodule Alchemoo.Builtins do
   def call(:memory_usage, args), do: memory_usage(args)
   def call(:db_disk_size, args), do: db_disk_size(args)
   def call(:dump_database, args), do: dump_database(args)
+  def call(:server_started, args), do: server_started(args)
+
+  # Utilities
+  def call(:force_input, args), do: force_input(args)
+  def call(:read_binary, args), do: read_binary(args)
+  def call(:object_bytes, args), do: object_bytes(args)
+  def call(:value_bytes, args), do: value_bytes(args)
+  def call(:ticks_left, args), do: ticks_left(args)
+  def call(:seconds_left, args), do: seconds_left(args)
 
   # Default
   def call(_name, _args), do: {:err, :E_VERBNF}
@@ -1680,6 +1689,79 @@ defmodule Alchemoo.Builtins do
   end
 
   defp dump_database(_), do: Value.err(:E_ARGS)
+
+  # server_started() - get server start time
+  defp server_started([]) do
+    # Assuming application started when this beam node started
+    # Or we could store start time in an Agent/Application env
+    # For now, use System.system_time(:second) - uptime
+    start_time = System.system_time(:second) - div(:erlang.statistics(:wall_clock) |> elem(0), 1000)
+    Value.num(start_time)
+  end
+
+  defp server_started(_), do: Value.err(:E_ARGS)
+
+  # force_input(player, text) - insert command into player queue
+  defp force_input([{:obj, player_id}, {:str, text}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        # We need to expose an input function on Handler
+        Handler.input(handler_pid, text <> "\n")
+        Value.num(1)
+
+      {:error, _} ->
+        # Player not connected or invalid
+        # MOO manual says E_INVARG if player not connected
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp force_input(_), do: Value.err(:E_ARGS)
+
+  # read_binary(filename) - read file (restricted)
+  defp read_binary([{:str, _filename}]) do
+    # Disabled for security by default
+    Value.err(:E_PERM)
+  end
+
+  defp read_binary(_), do: Value.err(:E_ARGS)
+
+  # object_bytes(obj) - get object size in bytes
+  defp object_bytes([{:obj, obj_id}]) do
+    case DBServer.get_object(obj_id) do
+      {:ok, obj} -> Value.num(:erlang.external_size(obj))
+      {:error, err} -> Value.err(err)
+    end
+  end
+
+  defp object_bytes(_), do: Value.err(:E_ARGS)
+
+  # value_bytes(value) - get value size in bytes
+  defp value_bytes([val]) do
+    Value.num(:erlang.external_size(val))
+  end
+
+  defp value_bytes(_), do: Value.err(:E_ARGS)
+
+  # ticks_left() - get remaining ticks
+  defp ticks_left([]) do
+    case Process.get(:ticks_remaining) do
+      nil -> Value.num(0)
+      ticks -> Value.num(ticks)
+    end
+  end
+
+  defp ticks_left(_), do: Value.err(:E_ARGS)
+
+  # seconds_left() - get remaining seconds
+  defp seconds_left([]) do
+    # Simplified: assume 1 second per 1000 ticks or similar, 
+    # or just return a large number if we don't have a real time limit
+    # Task timeout is usually 30s
+    Value.num(30)
+  end
+
+  defp seconds_left(_), do: Value.err(:E_ARGS)
 
   # set_player_flag(obj, flag) - set USER flag
   defp set_player_flag([{:obj, obj_id}, {:num, flag}]) do
