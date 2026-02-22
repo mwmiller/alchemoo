@@ -7,9 +7,9 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 ## Status: Working MOO Server! 🎉
 
 **Commits:** 40+  
-**Tests:** 104+ (100% passing)  
-**Lines of Code:** ~5,000  
-**Development Time:** Phase 1 complete, moving into Phase 2/3 polish
+**Tests:** 123 (100% passing)  
+**Lines of Code:** ~5,500  
+**Development Time:** Phase 2 (Built-ins) nearly complete (79%)
 
 ## What Works
 
@@ -17,7 +17,7 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 - ✅ Database parser (Format 1 & 4)
 - ✅ MOO language parser and interpreter
 - ✅ Database server with ETS storage
-- ✅ Task system with tick quotas
+- ✅ Task system with tick quotas and process isolation
 - ✅ Connection handling (multiple players)
 - ✅ Network layer (Telnet on port 7777)
 - ✅ Checkpoint system with auto-recovery
@@ -25,20 +25,15 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 - ✅ Command parsing and execution
 - ✅ Registry-based task tracking
 
-### Built-in Functions (57%)
-- ✅ 86 of 150 implemented
-- ✅ All critical functions working
-- ✅ Output: notify, connected_players, connection_name, boot_player
-- ✅ Context: player, caller, this, is_player, players
-- ✅ String: index, strsub, strcmp, explode, match, rmatch, substitute, decode_binary, encode_binary
-- ✅ Object: valid, parent, children, max_object, create, recycle, chparent, move
-- ✅ Property: properties, property_info, get_property, set_property, add_property, delete_property, set_property_info, is_clear_property, clear_property
-- ✅ Verb: verbs, verb_info, set_verb_info, verb_args, set_verb_args, verb_code, add_verb, delete_verb, set_verb_code
-- ✅ Math: random, min, max, abs, sqrt, sin, cos, tan, asin, acos, atan, exp, log, log10, ceil, floor, trunc
-- ✅ Time: time, ctime
-- ✅ Server: server_version, server_log, shutdown, memory_usage
-- ✅ Network: idle_seconds, connected_seconds
-- ✅ Task: suspend
+### Built-in Functions (79%)
+- ✅ **119 of ~150 implemented**
+- ✅ **All Critical Functions:** Output, Context, Object/Prop/Verb management
+- ✅ **Math:** Full suite including extended trig and log functions
+- ✅ **String:** Full suite including regex, substitution, and hashing
+- ✅ **Task Management:** `task_id`, `kill_task`, `suspend`, `eval`, `raise`
+- ✅ **Security:** `caller_perms`, `set_task_perms`, `callers`
+- ✅ **Network:** `listen`, `unlisten`, `open_network_connection` (stubs), `force_input`
+- ✅ **Introspection:** `function_info`, `disassemble`, `queue_info`
 
 ### Features
 - ✅ Full Unicode (UTF-8) support
@@ -64,46 +59,17 @@ User (telnet) → Ranch TCP → Connection.Handler (GenServer)
                          Checkpoint.Server (GenServer)
 ```
 
-### Command Execution Flow
-```
-Player Input → Parser → Executor → Database → Task → Output
-```
-
-### Key Design Decisions
-
-**One GenServer per connection** - Isolates player I/O, spawns tasks  
-**One GenServer per MOO task** - Tick quota enforcement, crash isolation  
-**Single Database Server** - ETS for concurrent reads, GenServer for writes  
-**Registry for tasks** - Metadata tracking, player-specific queries  
-**Automatic cleanup** - Kill player tasks on disconnect  
-
 ## Next Steps
 
-### Immediate Priorities
+### Immediate Priorities (Phase 3)
+1.  **Authentication System**: The current system bypasses auth (auto-login as wizard). Needs `check_password` and real login flow.
+2.  **Object Matching**: Commands currently only search the player object. Need full search order (room, contents, indirect objects).
+3.  **Final Built-ins**: ~30 remaining (mostly extended info and auth hooks).
+4.  **Configuration**: Extract hardcoded config to `config/config.exs`.
 
-1. **Authentication system** - Real login flow
-2. **Object matching** - Full search order in commands
-3. **More built-ins** - Implement Phase 3 (eval, task management)
-4. **Fix flaky tests** - (COMPLETED! 100% passing now)
-
-### Future Enhancements
-
-1. **SSH support** - Using fingerart library
-2. **WebSocket support** - For web clients
-3. **Configuration extraction** - Move CONFIG comments to config files
-4. **Performance optimization** - Profiling and tuning
-5. **Distributed mode** - Multi-node support
-6. **Hot code loading** - Update running server
-
-## Success Metrics
-
-✅ **Loads real MOO databases** - LambdaCore, JHCore  
-✅ **Executes MOO code** - Full language support  
-✅ **Handles connections** - Multiple simultaneous players  
-✅ **Automatic persistence** - Checkpoints and recovery  
-✅ **Production-ready architecture** - OTP supervision trees  
-✅ **Well-documented** - Comprehensive docs and examples  
-✅ **Well-tested** - 100+ tests covering core functionality  
+### Known Issues
+- `listen`, `unlisten`, and `open_network_connection` currently return `E_PERM` (placeholders).
+- `disassemble` returns source code instead of bytecode (valid for AST interpreter but worth noting).
 
 ---
 
