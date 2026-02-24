@@ -134,14 +134,11 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def init(opts) do
-    db_path = Keyword.get(opts, :db_path)
-
     # Check for core database if no path provided
     db_path =
-      if is_nil(db_path) do
-        System.get_env("CORE_DB") || Application.get_env(:alchemoo, :core_db)
-      else
-        db_path
+      case Keyword.get(opts, :core_db) do
+        nil -> Application.get_env(:alchemoo, :core_db)
+        opt_db -> opt_db
       end
 
     db =
@@ -237,7 +234,12 @@ defmodule Alchemoo.Database.Server do
         case Enum.find_index(obj.properties, &(&1.name == prop_name)) do
           nil ->
             # Update overridden_properties map
-            new_overridden = Map.put(obj.overridden_properties, prop_name, %Property{name: prop_name, value: value})
+            new_overridden =
+              Map.put(obj.overridden_properties, prop_name, %Property{
+                name: prop_name,
+                value: value
+              })
+
             new_obj = %{obj | overridden_properties: new_overridden}
             new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
             {:reply, :ok, %{state | db: new_db}}
@@ -278,7 +280,9 @@ defmodule Alchemoo.Database.Server do
             {:reply, {:error, :E_PROPNF}, state}
 
           idx ->
-            new_props = List.update_at(obj.properties, idx, fn p -> %{p | owner: owner, perms: perms} end)
+            new_props =
+              List.update_at(obj.properties, idx, fn p -> %{p | owner: owner, perms: perms} end)
+
             new_obj = %{obj | properties: new_props}
             new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
             {:reply, :ok, %{state | db: new_db}}
@@ -326,7 +330,11 @@ defmodule Alchemoo.Database.Server do
             {:reply, {:error, :E_VERBNF}, state}
 
           idx ->
-            new_verbs = List.update_at(obj.verbs, idx, fn v -> %{v | owner: owner, perms: perms, name: name} end)
+            new_verbs =
+              List.update_at(obj.verbs, idx, fn v ->
+                %{v | owner: owner, perms: perms, name: name}
+              end)
+
             new_obj = %{obj | verbs: new_verbs}
             new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
             {:reply, :ok, %{state | db: new_db}}
