@@ -9,6 +9,9 @@ defmodule Alchemoo.Parser.MOOSimple do
   alias Alchemoo.Parser.Expression
   alias Alchemoo.Value
 
+  @block_openers ["if ", "while ", "for ", "try"]
+  @block_closers ["endif", "endwhile", "endfor", "endtry"]
+
   @doc """
   Parse MOO verb code (list of lines) into AST.
   """
@@ -38,93 +41,19 @@ defmodule Alchemoo.Parser.MOOSimple do
   end
 
   defp parse_statement("if " <> cond_str, rest) do
-    # Parse if statement - remove parentheses if present
-    cond_str =
-      cond_str
-      |> String.trim()
-      |> String.trim_leading("(")
-      |> String.trim_trailing(")")
-
-    {:ok, condition, _} = Expression.parse(cond_str)
-
-    {then_lines, rest} = take_until(rest, ["elseif", "else", "endif"])
-    {:ok, then_block} = parse(then_lines)
-
-    case rest do
-      ["endif" | rest] ->
-        {:ok,
-         %AST.If{
-           condition: condition,
-           then_block: then_block,
-           elseif_blocks: [],
-           else_block: nil
-         }, rest}
-
-      ["else" | rest] ->
-        {else_lines, ["endif" | rest]} = take_until(rest, ["endif"])
-        {:ok, else_block} = parse(else_lines)
-
-        {:ok,
-         %AST.If{
-           condition: condition,
-           then_block: then_block,
-           elseif_blocks: [],
-           else_block: else_block
-         }, rest}
-
-      _ ->
-        {:ok,
-         %AST.If{
-           condition: condition,
-           then_block: then_block,
-           elseif_blocks: [],
-           else_block: nil
-         }, rest}
-    end
+    handle_if(cond_str, rest)
   end
 
   defp parse_statement("while " <> cond_str, rest) do
-    cond_str =
-      cond_str
-      |> String.trim()
-      |> String.trim_leading("(")
-      |> String.trim_trailing(")")
-
-    {:ok, condition, _} = Expression.parse(cond_str)
-
-    {body_lines, ["endwhile" | rest]} = take_until(rest, ["endwhile"])
-    {:ok, body} = parse(body_lines)
-
-    {:ok, %AST.While{condition: condition, body: body}, rest}
+    handle_while(cond_str, rest)
   end
 
   defp parse_statement("for " <> for_str, rest) do
-    # Parse: for var in (expr)
-    case Regex.run(~r/(\w+)\s+in\s+\((.+)\)/, for_str) do
-      [_, var, expr_str] ->
-        {:ok, list_expr, _} = Expression.parse(expr_str)
-
-        {body_lines, ["endfor" | rest]} = take_until(rest, ["endfor"])
-        {:ok, body} = parse(body_lines)
-
-        {:ok, %AST.ForList{var: var, list: list_expr, body: body}, rest}
-
-      _ ->
-        {:error, {:invalid_for, for_str}}
-    end
+    handle_for(for_str, rest)
   end
 
   defp parse_statement("return" <> rest_str, rest) do
-    rest_str = String.trim(rest_str) |> String.trim_trailing(";")
-
-    case rest_str do
-      "" ->
-        {:ok, %AST.Return{value: %AST.Literal{value: Value.num(0)}}, rest}
-
-      _ ->
-        {:ok, val_expr, _} = Expression.parse(rest_str)
-        {:ok, %AST.Return{value: val_expr}, rest}
-    end
+    handle_return(rest_str, rest)
   end
 
   defp parse_statement("break" <> _, rest) do
@@ -135,51 +64,264 @@ defmodule Alchemoo.Parser.MOOSimple do
     {:ok, %AST.Continue{}, rest}
   end
 
+  defp parse_statement("try", rest) do
+    handle_try(rest)
+  end
+
   defp parse_statement(line, rest) do
     line = String.trim_trailing(line, ";")
 
-    # Check for assignment
-    case String.contains?(line, "=") and not String.contains?(line, "==") and
-           not String.contains?(line, "!=") do
-      true ->
-        [target_str, value_str] = String.split(line, "=", parts: 2)
-        target_str = String.trim(target_str)
-        value_str = String.trim(value_str)
-
-        {:ok, value_expr, _} = Expression.parse(value_str)
-
-        target =
-          case String.match?(target_str, ~r/^\w+$/) do
-            true ->
-              %AST.Var{name: target_str}
-
-            false ->
-              # Property assignment or complex target
-              {:ok, target_ast, _} = Expression.parse(target_str)
-              target_ast
-          end
-
-        {:ok, %AST.Assignment{target: target, value: value_expr}, rest}
-
-      false ->
-        # Expression statement
-        {:ok, expr, _} = Expression.parse(line)
-        {:ok, %AST.ExprStmt{expr: expr}, rest}
+    # Expression statement (including assignment)
+    case Expression.parse(line) do
+      {:ok, expr, _} -> {:ok, %AST.ExprStmt{expr: expr}, rest}
+      err -> err
     end
+  end
+
+  defp handle_if(cond_str, rest) do
+    cond_str = strip_parens(cond_str)
+
+    case Expression.parse(cond_str) do
+      {:ok, condition, _} ->
+        {then_lines, remaining} = take_until(rest, ["elseif", "else", "endif"])
+
+        case parse(then_lines) do
+          {:ok, then_block} ->
+            {elseif_blocks, remaining} = parse_elseif_blocks(remaining)
+            parse_if_rest(condition, then_block, elseif_blocks, remaining)
+
+          err ->
+            err
+        end
+
+      err ->
+        err
+    end
+  end
+
+  defp parse_elseif_blocks(["elseif " <> cond_str | rest]) do
+    cond_str = strip_parens(cond_str)
+
+    case Expression.parse(cond_str) do
+      {:ok, condition, _} ->
+        {body_lines, remaining} = take_until(rest, ["elseif", "else", "endif"])
+
+        case parse(body_lines) do
+          {:ok, body} ->
+            {further_blocks, remaining} = parse_elseif_blocks(remaining)
+            {[%AST.ElseIf{condition: condition, block: body} | further_blocks], remaining}
+
+          _ ->
+            {[], ["elseif " <> cond_str | rest]}
+        end
+
+      _ ->
+        {[], ["elseif " <> cond_str | rest]}
+    end
+  end
+
+  defp parse_elseif_blocks(rest), do: {[], rest}
+
+  defp handle_while(cond_str, rest) do
+    cond_str = strip_parens(cond_str)
+
+    case Expression.parse(cond_str) do
+      {:ok, condition, _} ->
+        {body_lines, remaining} = take_until(rest, ["endwhile"])
+
+        case {parse(body_lines), remaining} do
+          {{:ok, body}, ["endwhile" | rest]} ->
+            {:ok, %AST.While{condition: condition, body: body}, rest}
+
+          _ ->
+            {:error, :expected_endwhile}
+        end
+
+      err ->
+        err
+    end
+  end
+
+  defp handle_for(for_str, rest) do
+    # Try: for var in (expr)
+    case Regex.run(~r/(\w+)\s+in\s+\((.+)\)/, for_str) do
+      [_, var, expr_str] ->
+        case Expression.parse(expr_str) do
+          {:ok, list_expr, _} -> parse_for_body(var, list_expr, rest)
+          err -> err
+        end
+
+      _ ->
+        # Try: for var in [expr1..expr2]
+        case Regex.run(~r/(\w+)\s+in\s+\[(.+)\.\.(.+)\]/, for_str) do
+          [_, var, start_str, end_str] ->
+            parse_for_range(var, start_str, end_str, rest)
+
+          _ ->
+            {:error, {:invalid_for, for_str}}
+        end
+    end
+  end
+
+  defp parse_for_body(var, list_expr, rest) do
+    {body_lines, remaining} = take_until(rest, ["endfor"])
+
+    case {parse(body_lines), remaining} do
+      {{:ok, body}, ["endfor" | rest]} ->
+        {:ok, %AST.ForList{var: var, list: list_expr, body: body}, rest}
+
+      _ ->
+        {:error, :expected_endfor}
+    end
+  end
+
+  defp parse_for_range(var, start_str, end_str, rest) do
+    with {:ok, start_expr, _} <- Expression.parse(start_str),
+         {:ok, end_expr, _} <- Expression.parse(end_str) do
+      {body_lines, remaining} = take_until(rest, ["endfor"])
+
+      case {parse(body_lines), remaining} do
+        {{:ok, body}, ["endfor" | rest]} ->
+          range_node = %AST.Range{expr: nil, start: start_expr, end: end_expr}
+          {:ok, %AST.For{var: var, range: range_node, body: body}, rest}
+
+        _ ->
+          {:error, :expected_endfor}
+      end
+    end
+  end
+
+  defp handle_return(rest_str, rest) do
+    rest_str = String.trim(rest_str) |> String.trim_trailing(";")
+
+    case rest_str do
+      "" ->
+        {:ok, %AST.Return{value: %AST.Literal{value: Value.num(0)}}, rest}
+
+      _ ->
+        case Expression.parse(rest_str) do
+          {:ok, val_expr, _} -> {:ok, %AST.Return{value: val_expr}, rest}
+          err -> err
+        end
+    end
+  end
+
+  defp handle_try(rest) do
+    {body_lines, remaining} = take_until(rest, ["except", "endtry"])
+
+    case parse(body_lines) do
+      {:ok, body} ->
+        parse_try_rest(body, remaining)
+
+      err ->
+        err
+    end
+  end
+
+  defp parse_try_rest(body, ["except " <> except_str | rest]) do
+    # Parse: except var (CODES)
+    [var, _codes] =
+      case String.split(except_str, " ", parts: 2) do
+        [v, c] -> [v, c]
+        [v] -> [v, "ANY"]
+      end
+
+    {except_lines, remaining} = take_until(rest, ["endtry"])
+
+    case {parse(except_lines), remaining} do
+      {{:ok, except_body}, ["endtry" | rest]} ->
+        {:ok,
+         %AST.Try{
+           body: body,
+           except_clauses: [%AST.Except{error_var: var, body: except_body}],
+           finally_block: nil
+         }, rest}
+
+      _ ->
+        {:error, :expected_endtry}
+    end
+  end
+
+  defp parse_try_rest(body, ["endtry" | rest]) do
+    {:ok, %AST.Try{body: body, except_clauses: [], finally_block: nil}, rest}
+  end
+
+  defp parse_try_rest(_, _), do: {:error, :expected_endtry}
+
+  defp strip_parens(str) do
+    str = String.trim(str)
+
+    case {String.starts_with?(str, "("), String.ends_with?(str, ")")} do
+      {true, true} ->
+        # Only remove one from each end
+        String.slice(str, 1, String.length(str) - 2)
+
+      _ ->
+        str
+    end
+  end
+
+  defp parse_if_rest(condition, then_block, elseifs, ["endif" | rest]) do
+    {:ok,
+     %AST.If{
+       condition: condition,
+       then_block: then_block,
+       elseif_blocks: elseifs,
+       else_block: nil
+     }, rest}
+  end
+
+  defp parse_if_rest(condition, then_block, elseifs, ["else" | rest]) do
+    {else_lines, remaining} = take_until(rest, ["endif"])
+
+    case {parse(else_lines), remaining} do
+      {{:ok, else_block}, ["endif" | rest]} ->
+        {:ok,
+         %AST.If{
+           condition: condition,
+           then_block: then_block,
+           elseif_blocks: elseifs,
+           else_block: else_block
+         }, rest}
+
+      _ ->
+        {:error, :expected_endif}
+    end
+  end
+
+  defp parse_if_rest(condition, then_block, elseifs, rest) do
+    {:ok,
+     %AST.If{
+       condition: condition,
+       then_block: then_block,
+       elseif_blocks: elseifs,
+       else_block: nil
+     }, rest}
   end
 
   defp take_until(lines, keywords) do
-    take_until(lines, keywords, [])
+    take_until(lines, keywords, 0, [])
   end
 
-  defp take_until([line | rest] = all, keywords, acc) do
-    case Enum.any?(keywords, &String.starts_with?(line, &1)) do
-      true -> {Enum.reverse(acc), all}
-      false -> take_until(rest, keywords, [line | acc])
+  defp take_until([], _keywords, _depth, acc), do: {Enum.reverse(acc), []}
+
+  defp take_until([line | rest], stop_keywords, depth, acc) do
+    is_opener = Enum.any?(@block_openers, &String.starts_with?(line, &1))
+    is_closer = Enum.any?(@block_closers, &String.starts_with?(line, &1))
+    is_stop = Enum.any?(stop_keywords, &String.starts_with?(line, &1))
+
+    cond do
+      depth == 0 and is_stop ->
+        {Enum.reverse(acc), [line | rest]}
+
+      is_opener ->
+        take_until(rest, stop_keywords, depth + 1, [line | acc])
+
+      is_closer ->
+        take_until(rest, stop_keywords, max(0, depth - 1), [line | acc])
+
+      true ->
+        take_until(rest, stop_keywords, depth, [line | acc])
     end
-  end
-
-  defp take_until([], _keywords, acc) do
-    {Enum.reverse(acc), []}
   end
 end

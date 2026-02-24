@@ -27,36 +27,129 @@ defmodule Alchemoo.Parser.Expression do
 
   # Tokenize input into list of tokens
   defp tokenize(input) do
-    # Simple tokenizer - handle negative numbers specially
-    input
-    |> String.trim()
-    # Protect negative numbers from being split
-    |> String.replace(~r/(\s|^)-(\d)/, "\\1NEG\\2")
-    |> String.replace(~r/([\+\*\/\(\)\{\},;])/, " \\1 ")
-    |> String.split(~r/\s+/, trim: true)
-    |> Enum.map(&String.replace(&1, "NEG", "-"))
+    # Regex to match:
+    # 1. String literals: "([^"\\]|\\.)*"
+    # 2. Object IDs: #[0-9]+
+    # 3. Identifiers and numbers: [a-zA-Z_][a-zA-Z0-9_]* | -?[0-9]+
+    # 4. Multi-char operators: == | != | <= | >= | && | || | ..
+    # 5. Single-char symbols: [\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@\.]
+    token_regex =
+      ~r/"(?:[^"\\]|\\.)*"|#[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*|-?[0-9]+|==|!=|<=|>=|&&|\|\||\.\.|[\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@]/
+
+    Regex.scan(token_regex, input)
+    |> Enum.map(fn [match] -> match end)
   end
 
   # Parse expression (handles operators with precedence)
   defp parse_expr(tokens) do
-    parse_comparison(tokens)
+    parse_assignment(tokens)
   end
 
-  # Comparison operators: ==, !=, <, >, <=, >=
+  # Assignment: var = expr
+  defp parse_assignment(tokens) do
+    case parse_conditional(tokens) do
+      {:ok, left, ["=" | rest]} ->
+        # Check if left is valid assignment target
+        case valid_assignment_target?(left) do
+          true ->
+            case parse_assignment(rest) do
+              {:ok, right, rest} ->
+                {:ok, %AST.Assignment{target: left, value: right}, rest}
+
+              err ->
+                err
+            end
+
+          false ->
+            {:error, :invalid_assignment_target}
+        end
+
+      other ->
+        other
+    end
+  end
+
+  defp valid_assignment_target?(%AST.Var{}), do: true
+  defp valid_assignment_target?(%AST.PropRef{}), do: true
+  defp valid_assignment_target?(%AST.Index{}), do: true
+  defp valid_assignment_target?(%AST.Range{}), do: true
+  defp valid_assignment_target?(%AST.ListExpr{}), do: true
+  defp valid_assignment_target?(_), do: false
+
+  # Conditional expression: cond ? then | else
+  defp parse_conditional(tokens) do
+    case parse_logical_or(tokens) do
+      {:ok, left, ["?" | rest]} ->
+        handle_conditional_rest(left, rest)
+
+      other ->
+        other
+    end
+  end
+
+  defp handle_conditional_rest(left, rest) do
+    case parse_expr(rest) do
+      {:ok, then_expr, ["|" | rest]} ->
+        case parse_expr(rest) do
+          {:ok, else_expr, rest} ->
+            {:ok, %AST.Conditional{condition: left, then_expr: then_expr, else_expr: else_expr},
+             rest}
+
+          _ ->
+            {:error, :invalid_conditional}
+        end
+
+      _ ->
+        {:error, :invalid_conditional}
+    end
+  end
+
+  # Logical OR: ||
+  defp parse_logical_or(tokens) do
+    with {:ok, left, rest} <- parse_logical_and(tokens) do
+      parse_logical_or_rest(left, rest)
+    end
+  end
+
+  defp parse_logical_or_rest(left, ["||" | rest]) do
+    with {:ok, right, rest} <- parse_logical_and(rest) do
+      node = %AST.BinOp{op: :||, left: left, right: right}
+      parse_logical_or_rest(node, rest)
+    end
+  end
+
+  defp parse_logical_or_rest(left, rest), do: {:ok, left, rest}
+
+  # Logical AND: &&
+  defp parse_logical_and(tokens) do
+    with {:ok, left, rest} <- parse_comparison(tokens) do
+      parse_logical_and_rest(left, rest)
+    end
+  end
+
+  defp parse_logical_and_rest(left, ["&&" | rest]) do
+    with {:ok, right, rest} <- parse_comparison(rest) do
+      node = %AST.BinOp{op: :&&, left: left, right: right}
+      parse_logical_and_rest(node, rest)
+    end
+  end
+
+  defp parse_logical_and_rest(left, rest), do: {:ok, left, rest}
+
+  # Comparison operators: ==, !=, <, >, <=, >=, in
   defp parse_comparison(tokens) do
-    with {:ok, left, rest} <- parse_additive(tokens) do
-      case rest do
-        ["==" | rest] ->
-          {:ok, right, rest} = parse_additive(rest)
-          {:ok, %AST.BinOp{op: :==, left: left, right: right}, rest}
+    case parse_additive(tokens) do
+      {:ok, left, [op | rest]} when op in ["==", "!=", "<", ">", "<=", ">=", "in"] ->
+        case parse_additive(rest) do
+          {:ok, right, rest} ->
+            {:ok, %AST.BinOp{op: String.to_atom(op), left: left, right: right}, rest}
 
-        ["!=" | rest] ->
-          {:ok, right, rest} = parse_additive(rest)
-          {:ok, %AST.BinOp{op: :!=, left: left, right: right}, rest}
+          err ->
+            err
+        end
 
-        _ ->
-          {:ok, left, rest}
-      end
+      other ->
+        other
     end
   end
 
@@ -68,20 +161,28 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp parse_additive_rest(left, ["+" | rest]) do
-    {:ok, right, rest} = parse_multiplicative(rest)
-    node = %AST.BinOp{op: :+, left: left, right: right}
-    parse_additive_rest(node, rest)
+    with {:ok, right, rest} <- parse_multiplicative(rest) do
+      node = %AST.BinOp{op: :+, left: left, right: right}
+      parse_additive_rest(node, rest)
+    end
   end
 
   defp parse_additive_rest(left, ["-" | rest]) do
-    {:ok, right, rest} = parse_multiplicative(rest)
-    node = %AST.BinOp{op: :-, left: left, right: right}
-    parse_additive_rest(node, rest)
+    with {:ok, right, rest} <- parse_multiplicative(rest) do
+      node = %AST.BinOp{op: :-, left: left, right: right}
+      parse_additive_rest(node, rest)
+    end
   end
 
   defp parse_additive_rest(left, rest), do: {:ok, left, rest}
 
   # Multiplicative operators: *, /, %
+  defp parse_multiplicative(["!" | rest]) do
+    with {:ok, val, rest} <- parse_primary(rest) do
+      {:ok, %AST.UnaryOp{op: :!, expr: val}, rest}
+    end
+  end
+
   defp parse_multiplicative(tokens) do
     with {:ok, left, rest} <- parse_primary(tokens) do
       parse_multiplicative_rest(left, rest)
@@ -89,55 +190,62 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp parse_multiplicative_rest(left, ["*" | rest]) do
-    {:ok, right, rest} = parse_primary(rest)
-    node = %AST.BinOp{op: :*, left: left, right: right}
-    parse_multiplicative_rest(node, rest)
+    with {:ok, right, rest} <- parse_primary(rest) do
+      node = %AST.BinOp{op: :*, left: left, right: right}
+      parse_multiplicative_rest(node, rest)
+    end
   end
 
   defp parse_multiplicative_rest(left, ["/" | rest]) do
-    {:ok, right, rest} = parse_primary(rest)
-    node = %AST.BinOp{op: :/, left: left, right: right}
-    parse_multiplicative_rest(node, rest)
+    with {:ok, right, rest} <- parse_primary(rest) do
+      node = %AST.BinOp{op: :/, left: left, right: right}
+      parse_multiplicative_rest(node, rest)
+    end
+  end
+
+  defp parse_multiplicative_rest(left, ["%" | rest]) do
+    with {:ok, right, rest} <- parse_primary(rest) do
+      node = %AST.BinOp{op: :%, left: left, right: right}
+      parse_multiplicative_rest(node, rest)
+    end
   end
 
   defp parse_multiplicative_rest(left, rest), do: {:ok, left, rest}
 
-  # Primary expressions: literals, variables, parentheses
+  # Primary expressions: literals, variables, parentheses, splice
+  defp parse_primary(["@" | rest]) do
+    with {:ok, expr, rest} <- parse_primary(rest) do
+      {:ok, %AST.UnaryOp{op: :@, expr: expr}, rest}
+    end
+  end
+
   defp parse_primary([<<"\"", _::binary>> = token | rest]) do
     str = token |> String.trim("\"") |> unescape_string()
-    {:ok, %AST.Literal{value: Value.str(str)}, rest}
+    parse_suffix(%AST.Literal{value: Value.str(str)}, rest)
   end
 
   defp parse_primary([<<"#", rest_token::binary>> | rest]) do
-    num = String.to_integer(rest_token)
-    {:ok, %AST.Literal{value: Value.obj(num)}, rest}
+    case Integer.parse(rest_token) do
+      {num, ""} -> parse_suffix(%AST.Literal{value: Value.obj(num)}, rest)
+      _ -> {:error, {:invalid_object_id, rest_token}}
+    end
   end
 
   defp parse_primary(["(" | rest]) do
-    {:ok, expr, [")" | rest]} = parse_expr(rest)
-    {:ok, expr, rest}
+    handle_paren_expr(rest)
   end
 
   defp parse_primary(["{" | rest]) do
-    parse_list(rest)
+    handle_list_expr(rest)
   end
 
   defp parse_primary([token | rest]) do
     cond do
       Regex.match?(~r/^-?\d+$/, token) ->
-        {:ok, %AST.Literal{value: Value.num(String.to_integer(token))}, rest}
+        parse_suffix(%AST.Literal{value: Value.num(String.to_integer(token))}, rest)
 
       Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, token) ->
-        case rest do
-          ["(" | args_tokens] ->
-            # Function call
-            {:ok, args, rest} = parse_func_args(args_tokens, [])
-            {:ok, %AST.FuncCall{name: token, args: args}, rest}
-
-          _ ->
-            # Variable
-            {:ok, %AST.Var{name: token}, rest}
-        end
+        handle_call_or_var(token, rest)
 
       true ->
         {:error, {:unexpected_token, token}}
@@ -148,16 +256,96 @@ defmodule Alchemoo.Parser.Expression do
     {:error, :unexpected_end}
   end
 
+  defp handle_paren_expr(tokens) do
+    case parse_expr(tokens) do
+      {:ok, expr, [")" | rest]} ->
+        parse_suffix(expr, rest)
+
+      {:ok, _, _} ->
+        {:error, :expected_closing_paren}
+
+      err ->
+        err
+    end
+  end
+
+  defp handle_list_expr(tokens) do
+    case parse_list(tokens) do
+      {:ok, list_node, rest} ->
+        parse_suffix(list_node, rest)
+
+      err ->
+        err
+    end
+  end
+
+  defp handle_call_or_var(name, ["(" | args_tokens]) do
+    case parse_func_args(args_tokens, []) do
+      {:ok, args, rest} ->
+        parse_suffix(%AST.FuncCall{name: name, args: args}, rest)
+
+      err ->
+        err
+    end
+  end
+
+  defp handle_call_or_var(name, rest) do
+    parse_suffix(%AST.Var{name: name}, rest)
+  end
+
+  # Suffixes: .prop, :verb(), [idx], [start..end]
+  defp parse_suffix(node, [".", prop_name | rest]) do
+    parse_suffix(%AST.PropRef{obj: node, prop: prop_name}, rest)
+  end
+
+  defp parse_suffix(node, [":", verb_name, "(" | rest]) do
+    case parse_func_args(rest, []) do
+      {:ok, args, rest} ->
+        parse_suffix(%AST.VerbCall{obj: node, verb: verb_name, args: args}, rest)
+
+      err ->
+        err
+    end
+  end
+
+  defp parse_suffix(node, ["[" | rest]) do
+    case parse_expr(rest) do
+      {:ok, start_expr, [".." | rest]} ->
+        case parse_expr(rest) do
+          {:ok, end_expr, ["]" | rest]} ->
+            parse_suffix(%AST.Range{expr: node, start: start_expr, end: end_expr}, rest)
+
+          _ ->
+            {:error, :expected_closing_bracket}
+        end
+
+      {:ok, index_expr, ["]" | rest]} ->
+        parse_suffix(%AST.Index{expr: node, index: index_expr}, rest)
+
+      {:ok, _, _} ->
+        {:error, :expected_closing_bracket}
+
+      err ->
+        err
+    end
+  end
+
+  defp parse_suffix(node, rest), do: {:ok, node, rest}
+
   # Parse function arguments: expr, expr, ... )
   defp parse_func_args([")" | rest], acc), do: {:ok, Enum.reverse(acc), rest}
 
   defp parse_func_args(tokens, acc) do
-    {:ok, expr, rest} = parse_expr(tokens)
+    case parse_expr(tokens) do
+      {:ok, expr, rest} ->
+        case rest do
+          ["," | rest] -> parse_func_args(rest, [expr | acc])
+          [")" | _] = rest -> parse_func_args(rest, [expr | acc])
+          _ -> {:error, :expected_comma_or_paren}
+        end
 
-    case rest do
-      ["," | rest] -> parse_func_args(rest, [expr | acc])
-      [")" | _] -> parse_func_args(rest, [expr | acc])
-      _ -> {:error, :expected_comma_or_paren}
+      err ->
+        err
     end
   end
 
@@ -171,12 +359,16 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp parse_list_elements(tokens, acc) do
-    {:ok, elem, rest} = parse_expr(tokens)
+    case parse_expr(tokens) do
+      {:ok, elem, rest} ->
+        case rest do
+          ["," | rest] -> parse_list_elements(rest, [elem | acc])
+          ["}" | _] = rest -> parse_list_elements(rest, [elem | acc])
+          _ -> {:error, :expected_comma_or_brace}
+        end
 
-    case rest do
-      ["," | rest] -> parse_list_elements(rest, [elem | acc])
-      ["}" | _] = rest -> parse_list_elements(rest, [elem | acc])
-      _ -> {:error, :expected_comma_or_brace}
+      err ->
+        err
     end
   end
 

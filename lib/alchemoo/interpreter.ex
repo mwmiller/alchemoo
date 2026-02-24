@@ -6,6 +6,7 @@ defmodule Alchemoo.Interpreter do
   compile to bytecode first for better performance.
   """
 
+  require Logger
   alias Alchemoo.AST
   alias Alchemoo.Value
 
@@ -49,9 +50,30 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp do_eval(%AST.BinOp{op: op, left: left, right: right}, env) do
-    with {:ok, left_val} <- eval(left, env),
-         {:ok, right_val} <- eval(right, env) do
-      eval_binop(op, left_val, right_val)
+    case op do
+      :&& ->
+        with {:ok, left_val} <- eval(left, env) do
+          if Value.truthy?(left_val) do
+            eval(right, env)
+          else
+            {:ok, left_val}
+          end
+        end
+
+      :|| ->
+        with {:ok, left_val} <- eval(left, env) do
+          if Value.truthy?(left_val) do
+            {:ok, left_val}
+          else
+            eval(right, env)
+          end
+        end
+
+      _ ->
+        with {:ok, left_val} <- eval(left, env),
+             {:ok, right_val} <- eval(right, env) do
+          eval_binop(op, left_val, right_val)
+        end
     end
   end
 
@@ -65,6 +87,7 @@ defmodule Alchemoo.Interpreter do
     results =
       Enum.reduce_while(elements, {:ok, []}, fn elem, {:ok, acc} ->
         case eval(elem, env) do
+          {:ok, {:spliced, list}} -> {:cont, {:ok, Enum.reverse(list) ++ acc}}
           {:ok, val} -> {:cont, {:ok, [val | acc]}}
           {:error, _} = err -> {:halt, err}
         end
@@ -79,7 +102,7 @@ defmodule Alchemoo.Interpreter do
   defp do_eval(%AST.Index{expr: expr, index: index}, env) do
     with {:ok, coll} <- eval(expr, env),
          {:ok, idx} <- eval(index, env) do
-      Value.index(coll, idx)
+      {:ok, Value.index(coll, idx)}
     end
   end
 
@@ -87,13 +110,25 @@ defmodule Alchemoo.Interpreter do
     with {:ok, coll} <- eval(expr, env),
          {:ok, {:num, start_idx}} <- eval(start_expr, env),
          {:ok, {:num, end_idx}} <- eval(end_expr, env) do
-      Value.range(coll, start_idx, end_idx)
+      {:ok, Value.range(coll, start_idx, end_idx)}
+    end
+  end
+
+  defp do_eval(%AST.Conditional{condition: cond, then_expr: then_e, else_expr: else_e}, env) do
+    with {:ok, cond_val} <- eval(cond, env) do
+      if Value.truthy?(cond_val) do
+        eval(then_e, env)
+      else
+        eval(else_e, env)
+      end
     end
   end
 
   defp do_eval(%AST.FuncCall{name: name, args: arg_exprs}, env) do
+    Logger.debug("Interpreter: calling builtin #{name}()")
+
     with {:ok, arg_vals} <- eval_args(arg_exprs, env) do
-      result = Alchemoo.Builtins.call(name, arg_vals)
+      result = Alchemoo.Builtins.call(name, arg_vals, env)
       {:ok, result}
     end
   end
@@ -110,6 +145,8 @@ defmodule Alchemoo.Interpreter do
   defp do_eval(%AST.VerbCall{obj: obj_expr, verb: verb_name, args: arg_exprs}, env) do
     with {:ok, obj_val} <- eval(obj_expr, env),
          {:ok, arg_vals} <- eval_args(arg_exprs, env) do
+      Logger.debug("Interpreter: calling verb #{Alchemoo.Value.to_literal(obj_val)}:#{verb_name}()")
+
       case Map.get(env, :runtime) do
         nil -> {:error, Value.err(:E_PERM)}
         runtime -> Alchemoo.Runtime.call_verb(runtime, obj_val, verb_name, arg_vals, env)
@@ -118,6 +155,7 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp do_eval(%AST.Block{statements: stmts}, env) do
+    Logger.debug("Interpreter: entering block with #{length(stmts)} statements")
     eval_block(stmts, env)
   end
 
@@ -169,24 +207,90 @@ defmodule Alchemoo.Interpreter do
     throw(:continue)
   end
 
-  defp do_eval(%AST.Assignment{target: %AST.Var{name: name}, value: val_expr}, env) do
+  defp do_eval(%AST.Assignment{target: target, value: val_expr}, env) do
     with {:ok, val} <- eval(val_expr, env) do
-      {:ok, val, Map.put(env, name, val)}
+      perform_assignment(target, val, env)
     end
   end
 
-  defp do_eval(
-         %AST.Assignment{target: %AST.PropRef{obj: obj_expr, prop: prop_name}, value: val_expr},
-         env
-       ) do
-    with {:ok, obj_val} <- eval(obj_expr, env),
-         {:ok, val} <- eval(val_expr, env) do
-      perform_prop_assignment(obj_val, prop_name, val, env)
+  defp do_eval(%AST.Try{body: body, except_clauses: clauses}, env) do
+    case eval(body, env) do
+      {:error, err} -> handle_exception(err, clauses, env)
+      other -> other
     end
+  rescue
+    e -> {:error, e}
+  catch
+    {:error, err} -> handle_exception(err, clauses, env)
   end
 
   defp do_eval(%AST.ExprStmt{expr: expr}, env) do
     eval(expr, env)
+  end
+
+  # Helper: perform assignment to various targets
+  defp perform_assignment(%AST.Var{name: name}, val, env) do
+    {:ok, val, Map.put(env, name, val)}
+  end
+
+  defp perform_assignment(%AST.PropRef{obj: obj_expr, prop: prop_name}, val, env) do
+    with {:ok, obj_val} <- eval(obj_expr, env) do
+      perform_prop_assignment(obj_val, prop_name, val, env)
+    end
+  end
+
+  defp perform_assignment(%AST.Index{expr: target_expr, index: index_expr}, val, env) do
+    with {:ok, coll} <- eval(target_expr, env),
+         {:ok, idx} <- eval(index_expr, env) do
+      case Value.set_index(coll, idx, val) do
+        {:err, _} = err -> err
+        new_coll -> perform_assignment(target_expr, new_coll, env)
+      end
+    end
+  end
+
+  defp perform_assignment(%AST.ListExpr{elements: targets}, {:list, values}, env) do
+    case destructure_list(targets, values, env) do
+      {:ok, new_env} -> {:ok, {:list, values}, new_env}
+      err -> err
+    end
+  end
+
+  defp perform_assignment(%AST.ListExpr{}, _, _env), do: {:error, Value.err(:E_TYPE)}
+
+  defp destructure_list([], [], env), do: {:ok, env}
+  defp destructure_list([], _, _env), do: {:error, Value.err(:E_ARGS)}
+
+  defp destructure_list([%AST.UnaryOp{op: :@, expr: target} | rest_targets], values, env) do
+    # Collect all remaining values into this target
+    num_rest = length(rest_targets)
+    {spliced_values, remaining_values} = Enum.split(values, length(values) - num_rest)
+
+    with {:ok, _, env} <- perform_assignment(target, Value.list(spliced_values), env) do
+      destructure_list(rest_targets, remaining_values, env)
+    end
+  end
+
+  defp destructure_list([target | rest_targets], [val | rest_values], env) do
+    with {:ok, _, env} <- perform_assignment(target, val, env) do
+      destructure_list(rest_targets, rest_values, env)
+    end
+  end
+
+  defp destructure_list([_ | _], [], _env), do: {:error, Value.err(:E_ARGS)}
+
+  defp handle_exception(err, clauses, env) do
+    case clauses do
+      [clause | _] ->
+        # Standard MOO error format for except: {code, message, value, traceback}
+        # For now, just {code, "", 0, {}}
+        err_value = Value.list([err, Value.str(""), Value.num(0), Value.list([])])
+        except_env = Map.put(env, clause.error_var, err_value)
+        eval(clause.body, except_env)
+
+      [] ->
+        throw({:error, err})
+    end
   end
 
   defp perform_prop_assignment(obj_val, prop_name, val, env) do
@@ -291,6 +395,8 @@ defmodule Alchemoo.Interpreter do
   defp eval_args(arg_exprs, env) do
     Enum.reduce_while(arg_exprs, {:ok, []}, fn expr, {:ok, acc} ->
       case eval(expr, env) do
+        {:ok, {:spliced, {:list, list}}} -> {:cont, {:ok, Enum.reverse(list) ++ acc}}
+        {:ok, {:spliced, _}} -> {:halt, {:error, Value.err(:E_TYPE)}}
         {:ok, val} -> {:cont, {:ok, [val | acc]}}
         {:error, _} = err -> {:halt, err}
       end
@@ -307,6 +413,18 @@ defmodule Alchemoo.Interpreter do
 
   defp eval_binop(:/, {:num, _}, {:num, 0}), do: {:error, Value.err(:E_DIV)}
   defp eval_binop(:/, {:num, a}, {:num, b}), do: {:ok, Value.num(div(a, b))}
+
+  defp eval_binop(:%, {:num, _}, {:num, 0}), do: {:error, Value.err(:E_DIV)}
+  defp eval_binop(:%, {:num, a}, {:num, b}), do: {:ok, Value.num(rem(a, b))}
+
+  defp eval_binop(:in, val, {:list, items}) do
+    case Enum.any?(items, &Value.equal?(&1, val)) do
+      true -> {:ok, Value.num(1)}
+      false -> {:ok, Value.num(0)}
+    end
+  end
+
+  defp eval_binop(:in, _val, _), do: {:error, Value.err(:E_TYPE)}
 
   defp eval_binop(:==, a, b) do
     case Value.equal?(a, b) do
@@ -360,6 +478,9 @@ defmodule Alchemoo.Interpreter do
       false -> {:ok, Value.num(1)}
     end
   end
+
+  defp eval_unop(:@, {:list, _} = val), do: {:ok, {:spliced, val}}
+  defp eval_unop(:@, _), do: {:error, Value.err(:E_TYPE)}
 
   defp eval_unop(_op, _val), do: {:error, Value.err(:E_TYPE)}
 end

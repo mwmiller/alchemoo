@@ -69,6 +69,12 @@ defmodule Alchemoo.AST do
     defstruct [:expr, :start, :end]
   end
 
+  # Conditional expression: cond ? then | else
+  defmodule Conditional do
+    @moduledoc false
+    defstruct [:condition, :then_expr, :else_expr]
+  end
+
   # Statements
   defmodule If do
     @moduledoc false

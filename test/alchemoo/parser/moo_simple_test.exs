@@ -43,7 +43,7 @@ defmodule Alchemoo.Parser.MOOSimpleTest do
 
   test "parses assignment" do
     {:ok, ast} = MOOSimple.parse("x = 42;")
-    assert %AST.Block{statements: [%AST.Assignment{target: %AST.Var{name: "x"}}]} = ast
+    assert %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Assignment{target: %AST.Var{name: "x"}}}]} = ast
   end
 
   test "parses and executes simple verb" do

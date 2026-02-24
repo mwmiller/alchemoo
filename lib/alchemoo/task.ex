@@ -4,7 +4,7 @@ defmodule Alchemoo.Task do
   GenServer process with tick quota enforcement, suspend/resume support,
   and crash isolation.
   """
-  use GenServer
+  use GenServer, restart: :temporary
   require Logger
 
   alias Alchemoo.{Interpreter, Parser, Value}
@@ -32,7 +32,8 @@ defmodule Alchemoo.Task do
     ticks_used: 0,
     tick_quota: @default_tick_quota,
     suspended_until: nil,
-    result: nil
+    result: nil,
+    started_at: nil
   ]
 
   ## Client API
@@ -122,6 +123,7 @@ defmodule Alchemoo.Task do
     this_id = Keyword.get(opts, :this, 2)
     caller_id = Keyword.get(opts, :caller, 2)
     args = Keyword.get(opts, :args, [])
+    verb_name = Keyword.get(opts, :verb_name, "(unknown)")
 
     env =
       initial_env
@@ -129,6 +131,13 @@ defmodule Alchemoo.Task do
       |> Map.put("this", Value.obj(this_id))
       |> Map.put("caller", Value.obj(caller_id))
       |> Map.put("args", Value.list(args))
+      |> Map.put_new("verb", Value.str(verb_name))
+      |> Map.put_new("argstr", Value.str(""))
+      |> Map.put_new("dobj", Value.obj(-1))
+      |> Map.put_new("dobjstr", Value.str(""))
+      |> Map.put_new("prepstr", Value.str(""))
+      |> Map.put_new("iobj", Value.obj(-1))
+      |> Map.put_new("iobjstr", Value.str(""))
 
     task = %__MODULE__{
       id: make_ref(),
@@ -141,8 +150,11 @@ defmodule Alchemoo.Task do
       handler_pid: Keyword.get(opts, :handler_pid),
       sync_caller: Keyword.get(opts, :sync_caller),
       tick_quota: Keyword.get(opts, :tick_quota, @default_tick_quota),
-      perms: player_id
+      perms: player_id,
+      started_at: System.monotonic_time(:second)
     }
+
+    Logger.debug("Initializing task #{inspect(task.id)} for verb '#{verb_name}' on ##{this_id}")
 
     # Registry allows metadata-based lookups (e.g. all tasks for a player)
     Registry.register(Alchemoo.TaskRegistry, task.id, %{
@@ -150,7 +162,9 @@ defmodule Alchemoo.Task do
       this: task.this,
       caller: task.caller,
       handler_pid: task.handler_pid,
-      started_at: System.system_time(:second)
+      started_at: System.system_time(:second),
+      verb_name: verb_name,
+      verb_definer: this_id
     })
 
     Process.put(:task_context, %{
@@ -161,25 +175,37 @@ defmodule Alchemoo.Task do
       handler_pid: task.handler_pid,
       perms: task.perms,
       caller_perms: Keyword.get(opts, :caller_perms, 0),
-      stack: Keyword.get(opts, :stack, [])
+      stack: Keyword.get(opts, :stack, []),
+      started_at: task.started_at,
+      verb_name: verb_name,
+      verb_definer: this_id
     })
 
     {:ok, task, {:continue, :execute}}
   end
 
   @impl true
+  def handle_call(:get_context, _from, task) do
+    context = Process.get(:task_context)
+    {:reply, context, task}
+  end
+
+  @impl true
   def handle_continue(:execute, task) do
+    context = Process.get(:task_context)
+    verb_name = (context && context[:verb_name]) || "(unknown)"
+    Logger.debug("Starting execution of task #{inspect(task.id)} ('#{verb_name}')")
+
     case execute_with_quota(task) do
       {:ok, result, new_task} ->
+        Logger.debug("Task #{inspect(task.id)} finished with result: #{inspect(result)}")
         handle_task_success(result, new_task)
-
-      {:suspended, new_task} ->
-        {:noreply, new_task}
 
       {:quota_exceeded, new_task} ->
         handle_task_quota_exceeded(new_task)
 
       {:error, reason, new_task} ->
+        Logger.error("Task #{inspect(task.id)} failed: #{inspect(reason)}")
         handle_task_error(reason, new_task)
     end
   end
@@ -211,12 +237,6 @@ defmodule Alchemoo.Task do
     end
 
     {:stop, {:shutdown, {:error, reason}}, task}
-  end
-
-  @impl true
-  def handle_info(:resume, task) do
-    # Resume from suspend
-    {:noreply, task, {:continue, :execute}}
   end
 
   ## Private Helpers
@@ -257,12 +277,6 @@ defmodule Alchemoo.Task do
       :quota_exceeded ->
         new_task = %{task | ticks_used: task.tick_quota}
         {:quota_exceeded, new_task}
-
-      {:suspend, seconds} ->
-        ticks_used = task.tick_quota - task.ticks_used - Process.get(:ticks_remaining)
-        new_task = %{task | ticks_used: task.ticks_used + ticks_used}
-        Process.send_after(self(), :resume, seconds * 1000)
-        {:suspended, new_task}
 
       {:error, reason} ->
         {:error, reason, task}

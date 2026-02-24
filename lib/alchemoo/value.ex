@@ -81,10 +81,23 @@ defmodule Alchemoo.Value do
   def typeof({:list, _}), do: :list
 
   @doc """
-  Check if value is true (MOO semantics: 0 is false, everything else is true).
+  Check if value is true (MOO semantics).
+  The following values are false:
+  - The integer 0
+  - The empty string ""
+  - The empty list {}
+  - Any error value
+  All other values are true.
   """
-  def truthy?({:num, 0}), do: false
-  def truthy?(_), do: true
+  def truthy?(val) do
+    case val do
+      {:num, 0} -> false
+      {:str, ""} -> false
+      {:list, []} -> false
+      {:err, _} -> false
+      _ -> true
+    end
+  end
 
   @doc """
   Compare two MOO values for equality.
@@ -157,6 +170,31 @@ defmodule Alchemoo.Value do
   def concat({:str, s1}, {:str, s2}), do: {:str, s1 <> s2}
   def concat({:list, l1}, {:list, l2}), do: {:list, l1 ++ l2}
   def concat(_, _), do: {:err, :E_TYPE}
+
+  @doc """
+  Set value at index (1-based).
+  """
+  def set_index({:list, items}, {:num, i}, val) when i > 0 do
+    case i <= Kernel.length(items) do
+      true -> {:list, List.replace_at(items, i - 1, val)}
+      false -> {:err, :E_RANGE}
+    end
+  end
+
+  def set_index({:str, s}, {:num, i}, {:str, val}) when i > 0 and byte_size(val) == 1 do
+    case i <= String.length(s) do
+      true ->
+        prefix = String.slice(s, 0, i - 1)
+        suffix = String.slice(s, i..-1//1)
+        {:str, prefix <> val <> suffix}
+
+      false ->
+        {:err, :E_RANGE}
+    end
+  end
+
+  def set_index({:str, _}, {:num, _}, _), do: {:err, :E_TYPE}
+  def set_index(_, _, _), do: {:err, :E_TYPE}
 
   @doc """
   Convert value to string representation.

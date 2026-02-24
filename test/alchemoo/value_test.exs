@@ -26,7 +26,9 @@ defmodule Alchemoo.ValueTest do
   test "truthiness" do
     assert Value.truthy?(Value.num(1)) == true
     assert Value.truthy?(Value.num(0)) == false
-    assert Value.truthy?(Value.str("")) == true
+    assert Value.truthy?(Value.str("")) == false
+    assert Value.truthy?(Value.list([])) == false
+    assert Value.truthy?(Value.err(:E_PERM)) == false
   end
 
   test "equality" do
