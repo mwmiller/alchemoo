@@ -128,21 +128,21 @@ defmodule Alchemoo.Database.Parser do
 
   # Parse metadata based on version
   defp parse_metadata(lines, version) when version >= 4 do
-    # Format 4: 
+    # Format 4:
     # 1. object_count
     # 2. verb_count
     # 3. dummy
     # 4. user_count
     # 5. users (user_count lines)
-    
+
     with [obj_count_str | rest] <- lines,
          {object_count, _} <- Integer.parse(obj_count_str),
          [_verb_count | rest] <- rest,
          [_dummy1 | rest] <- rest,
          [user_count_str | rest] <- rest,
          {user_count, _} <- Integer.parse(user_count_str),
-         rest = Enum.drop(rest, user_count) do # Skip user IDs
-      
+         # Skip user IDs
+         rest = Enum.drop(rest, user_count) do
       # Sometimes there's more metadata (numbers) until #0
       rest = skip_to_first_object(rest)
 
@@ -188,7 +188,9 @@ defmodule Alchemoo.Database.Parser do
   # Parse a single object
   defp parse_object(["" | rest], version), do: parse_object(rest, version)
 
-  defp parse_object(["#" <> id_str | rest], version) do
+  # PONDER: Why is the version unused here?
+  # Are there any differences in object structure between versions that we need to handle?
+  defp parse_object(["#" <> id_str | rest], _version) do
     with {:ok, id} <- parse_integer(id_str),
          {:ok, name, rest} <- parse_line(rest),
          # Both Format 1 and Format 4 have an extra line after the name (handles), usually empty
@@ -352,7 +354,7 @@ defmodule Alchemoo.Database.Parser do
       {type_code, _} ->
         # Modern MOO uses 0x20 bit for 'shared' flag
         base_type = band(type_code, 0x1F)
-        
+
         # Check for shared flag (0x20)
         if band(type_code, 0x20) != 0 do
           # Shared value: read one integer ID and treat as numerical value for now

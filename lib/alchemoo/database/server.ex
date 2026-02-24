@@ -398,26 +398,6 @@ defmodule Alchemoo.Database.Server do
   end
 
   @impl true
-  def handle_cast({:set_verb_ast, obj_id, verb_name, ast}, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:noreply, state}
-
-      obj ->
-        case Enum.find_index(obj.verbs, &Verb.match?(&1, verb_name)) do
-          nil ->
-            {:noreply, state}
-
-          idx ->
-            new_verbs = List.update_at(obj.verbs, idx, fn v -> %{v | ast: ast} end)
-            new_obj = %{obj | verbs: new_verbs}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:noreply, %{state | db: new_db}}
-        end
-    end
-  end
-
-  @impl true
   def handle_call({:add_verb, obj_id, name, owner, perms, args}, _from, state) do
     case Map.get(state.db.objects, obj_id) do
       nil ->
@@ -591,8 +571,8 @@ defmodule Alchemoo.Database.Server do
   end
 
   @impl true
-  def handle_call({:renumber_object, obj_id}, _from, state) do
-    # Placeholder for renumbering logic
+  def handle_call({:renumber_object, _obj_id}, _from, state) do
+    # PONDER: Placeholder for renumbering logic
     {:reply, :ok, state}
   end
 
@@ -601,6 +581,26 @@ defmodule Alchemoo.Database.Server do
     max_id = Map.keys(state.db.objects) |> Enum.max(fn -> -1 end)
     new_db = %{state.db | max_object: max_id}
     {:reply, :ok, %{state | db: new_db}}
+  end
+
+  @impl true
+  def handle_cast({:set_verb_ast, obj_id, verb_name, ast}, state) do
+    case Map.get(state.db.objects, obj_id) do
+      nil ->
+        {:noreply, state}
+
+      obj ->
+        case Enum.find_index(obj.verbs, &Verb.match?(&1, verb_name)) do
+          nil ->
+            {:noreply, state}
+
+          idx ->
+            new_verbs = List.update_at(obj.verbs, idx, fn v -> %{v | ast: ast} end)
+            new_obj = %{obj | verbs: new_verbs}
+            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
+            {:noreply, %{state | db: new_db}}
+        end
+    end
   end
 
   ## Private Helpers

@@ -4,7 +4,6 @@ defmodule Alchemoo.Database.Writer do
   """
   alias Alchemoo.Database
   alias Alchemoo.Database.Object
-  alias Alchemoo.Value
 
   def write_moo(%Database{} = db, path) do
     content = serialize_moo(db)
@@ -57,7 +56,8 @@ defmodule Alchemoo.Database.Writer do
     header = [
       "##{obj.id}",
       obj.name,
-      "", # handles
+      # handles
+      "",
       "#{obj.flags}",
       "#{obj.owner}",
       "#{obj.location}",
@@ -109,7 +109,8 @@ defmodule Alchemoo.Database.Writer do
       {:str, s} -> "2\n#{s}"
       {:err, e} -> "3\n#{error_to_code(e)}"
       {:list, items} -> "4\n#{length(items)}\n#{Enum.map_join(items, "\n", &serialize_value/1)}"
-      :clear -> "0\n0" # Should not happen in export
+      # Should not happen in export
+      :clear -> "0\n0"
     end
   end
 
