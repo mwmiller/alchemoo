@@ -26,31 +26,32 @@
   - Truthiness (0 is false, everything else is true)
 
 ### Expression Parser (100%)
-- **Recursive descent parser**
+- **Advanced Recursive Descent Parser**
+- **Full Operator Support**:
+  - Arithmetic: +, -, *, /, %
+  - Comparison: ==, !=, <, >, <=, >=, in
+  - Logical: &&, ||, !
+  - Splicing: @
+  - Ranges: [start..end]
+- **Assignment Expressions**: a = b
 - **Operator precedence**
-- **Supported**:
-  - Literals: numbers, strings, objects, lists
-  - Variables
-  - Binary operators: +, -, *, /, ==, !=, <, >, <=, >=
-  - Unary operators: -, !
-  - Parentheses
-  - List literals
-  - Function calls
 
 ### Interpreter (100%)
 - **Tree-walking interpreter**
+- **AST Caching**: Verbs are parsed once and cached for performance
 - **Expression evaluation**
 - **Statement execution**:
   - if/elseif/else
   - while loops
-  - for-in loops
+  - for-in loops (list and range)
+  - try/except/finally
   - return
   - break/continue
   - Variable assignment
   - Property assignment
 - **Control flow** with proper exception handling
 
-### Built-in Functions (86 implemented, ~64 remaining)
+### Built-in Functions (~85% complete)
 **Type Operations**:
 - typeof, tostr, toint, toobj, toliteral
 
@@ -67,28 +68,28 @@
 - equal
 
 **String Operations**:
-- index, rindex, strsub, strcmp, explode, substitute, match, rmatch, decode_binary, encode_binary
+- index, rindex, strsub, strcmp, explode, substitute, match, rmatch, decode_binary, encode_binary, crypt, binary_hash, value_hash
 
 **Output/Communication**:
 - notify, connected_players, connection_name, boot_player
 
 **Context**:
-- player, caller, this, is_player, players
+- player, caller, this, is_player, players, callers, task_id
 
 **Object Operations**:
-- valid, parent, children, max_object, create, recycle, chparent, move
+- valid, parent, children, max_object, create, recycle, chparent, move, chown, renumber
 
 **Property Operations**:
 - properties, property_info, get_property, set_property, add_property, delete_property, set_property_info, is_clear_property, clear_property
 
 **Verb Operations**:
-- verbs, verb_info, set_verb_info, verb_args, set_verb_args, verb_code, add_verb, delete_verb, set_verb_code
+- verbs, verb_info, set_verb_info, verb_args, set_verb_args, verb_code, add_verb, delete_verb, set_verb_code, disassemble
 
 **Task Management**:
-- suspend
+- suspend, resume, kill_task, queued_tasks, task_stack, raise
 
 **Network**:
-- idle_seconds, connected_seconds
+- idle_seconds, connected_seconds, output_delimiters, set_output_delimiters
 
 **Server Management**:
 - server_version, server_log, shutdown, memory_usage
@@ -97,7 +98,7 @@
 - **Object database access**
 - **Property lookup** with inheritance chain
 - **Verb dispatch** with inheritance chain
-- **Environment management**
+- **Environment management** with standard variables (player, dobj, etc.)
 - **Verb execution** from database! (Phase 1 complete)
 
 ### Network Layer (100%)
@@ -112,39 +113,24 @@
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 100+
+- **Total Tests**: 140
 - **Passing**: 100%
 - **Coverage Areas**:
   - Value operations (10 tests)
-  - Expression evaluation (10 tests)
-  - Built-in functions (40 tests)
+  - Expression evaluation (20 tests)
+  - Built-in functions (60 tests)
   - Database parsing (10 tests)
-  - Task system (15 tests)
-  - Command execution (15 tests)
-
-## 🎯 Next Priorities
-
-1. **More Built-ins** - Implement Phase 3 (eval, task management)
-2. **Authentication** - Real login flow
-3. **Object matching** - Full search order in commands
-4. **SSH support** - Using fingerart library
+  - Task system (20 tests)
+  - Command execution (20 tests)
 
 ## 📈 Progress Metrics
 
-- **Lines of Code**: ~5,000
-- **Modules**: 25
-- **Commits**: 40
+- **Lines of Code**: ~6,500
+- **Modules**: 30
+- **Commits**: 70+
 - **Time**: Ongoing
-- **Completion**: ~75% of core MOO functionality
-
-## 📝 Architecture Decisions
-
-1. **Tree-walking interpreter** - Simple, correct, good for MVP
-2. **Immutable data structures** - Leverages Elixir strengths
-3. **Process-per-task** - Maps MOO tasks to GenServer processes
-4. **ETS for hot data** - Fast object lookups
-5. **Inheritance via recursion** - Clean property/verb lookup
+- **Completion**: ~85% of core MOO functionality
 
 ---
 
-**This documentation is up to date as of Feb 22, 2026.**
+**This documentation is up to date as of Feb 23, 2026 (v0.2.0).**

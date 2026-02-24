@@ -29,8 +29,8 @@ Alchemoo is now a functional MOO server that can:
 - Handle multiple concurrent players
 - Automatically checkpoint and recover from crashes
 
-**Test Coverage:** 104 tests (100% passing)  
-**Commits:** 40+
+**Test Coverage:** 140 tests (100% passing)  
+**Commits:** 70+
 
 ## Quick Start
 
