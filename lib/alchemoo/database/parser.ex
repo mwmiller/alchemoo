@@ -35,12 +35,7 @@ defmodule Alchemoo.Database.Parser do
   def parse(content) do
     lines = String.split(content, ~r/\r?\n/)
 
-    case do_parse(lines) do
-      {:ok, _} = res -> res
-      {:error, reason} = err ->
-        IO.inspect(reason, label: "Database.Parser: parse error")
-        err
-    end
+    do_parse(lines)
   end
 
   defp do_parse(lines) do

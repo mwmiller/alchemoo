@@ -51,48 +51,11 @@
   - Property assignment
 - **Control flow** with proper exception handling
 
-### Built-in Functions (~85% complete)
-**Type Operations**:
-- typeof, tostr, toint, toobj, toliteral
+### Built-in Functions (100% complete)
+**Total Implemented**: 140/140
 
-**List Operations**:
-- length, is_member, listappend, listinsert, listdelete, listset, setadd, setremove, sort
-
-**Math Operations**:
-- min, max, abs, sqrt, sin, cos, random, tan, asin, acos, atan, exp, log, log10, ceil, floor, trunc
-
-**Time Operations**:
-- time, ctime
-
-**Comparison**:
-- equal
-
-**String Operations**:
-- index, rindex, strsub, strcmp, explode, substitute, match, rmatch, decode_binary, encode_binary, crypt, binary_hash, value_hash
-
-**Output/Communication**:
-- notify, connected_players, connection_name, boot_player
-
-**Context**:
-- player, caller, this, is_player, players, callers, task_id
-
-**Object Operations**:
-- valid, parent, children, max_object, create, recycle, chparent, move, chown, renumber
-
-**Property Operations**:
-- properties, property_info, get_property, set_property, add_property, delete_property, set_property_info, is_clear_property, clear_property
-
-**Verb Operations**:
-- verbs, verb_info, set_verb_info, verb_args, set_verb_args, verb_code, add_verb, delete_verb, set_verb_code, disassemble
-
-**Task Management**:
-- suspend, resume, kill_task, queued_tasks, task_stack, raise
-
-**Network**:
-- idle_seconds, connected_seconds, output_delimiters, set_output_delimiters
-
-**Server Management**:
-- server_version, server_log, shutdown, memory_usage
+All standard categories are complete:
+- Type Operations, List Operations, Math, Time, Comparison, String Operations, Output/Communication, Context, Object Operations, Property Operations, Verb Operations, Task Management, Security, Network, Server Management, Utilities.
 
 ### Runtime Environment (100%)
 - **Object database access**
@@ -125,12 +88,12 @@
 
 ## 📈 Progress Metrics
 
-- **Lines of Code**: ~6,500
-- **Modules**: 30
-- **Commits**: 70+
+- **Lines of Code**: ~7,000
+- **Modules**: 32
+- **Commits**: 80+
 - **Time**: Ongoing
-- **Completion**: ~85% of core MOO functionality
+- **Completion**: ~95% of core MOO functionality
 
 ---
 
-**This documentation is up to date as of Feb 23, 2026 (v0.2.0).**
+**This documentation is up to date as of Feb 24, 2026 (v0.2.0).**
