@@ -1,67 +1,133 @@
 defmodule Alchemoo.Database.Resolver do
   @moduledoc """
-  Resolves symbolic object names like $login, $player, etc.
-
-  In MOO, objects can be referenced by symbolic names starting with $.
-  These are resolved by looking for objects whose name starts with $.
+  Resolves object names and aliases to object IDs.
   """
-
   alias Alchemoo.Database.Server, as: DB
 
   @doc """
-  Resolve a symbolic name to an object ID.
-
-  Examples:
-    resolve("$login") => {:ok, 10}
-    resolve("$player") => {:ok, 6}
-    resolve("$nothing") => {:error, :not_found}
+  Find an object by name or alias in a list of candidate IDs.
   """
-  def resolve("$" <> property_name = full_name) do
-    # MOO system object resolution: $name means 0.name
-    case DB.get_property(0, property_name) do
-      {:ok, {:obj, id}} ->
-        {:ok, id}
+  def match(name, candidate_ids, context \\ %{})
 
-      _ ->
-        # Fallback to searching for object with this name
-        search_for_object_by_name(full_name)
+  def match(name, candidate_ids, context) when is_binary(name) and is_list(candidate_ids) do
+    name = String.trim(name)
+
+    cond do
+      name == "" ->
+        {:error, :not_found}
+
+      name == "me" ->
+        {:ok, Map.get(context, :player, 2)}
+
+      name == "here" ->
+        {:ok, Map.get(context, :location, -1)}
+
+      String.starts_with?(name, "#") ->
+        resolve_id(name)
+
+      true ->
+        search_candidates(name, candidate_ids)
     end
   end
 
-  def resolve(symbolic_name) when is_binary(symbolic_name) do
-    search_for_object_by_name(symbolic_name)
+  def match(_name, _candidates, _context), do: {:error, :not_found}
+
+  @doc """
+  Specialized match for players by name.
+  """
+  def player(name) do
+    # In a real MOO, players are usually indexed.
+    # For now, we search all players.
+    all_players = list_all_players()
+    match(name, all_players)
   end
 
-  defp search_for_object_by_name(name) do
-    # Get all objects and search for matching name
-    snapshot = DB.get_snapshot()
+  @doc """
+  Resolve a symbolic name (e.g. "$login") or object ID.
+  """
+  def resolve(<<"$", name::binary>>) do
+    object(String.to_atom(name))
+  end
 
-    result =
-      Enum.find(snapshot.objects, fn {_id, obj} ->
-        obj.name == name
-      end)
-
-    case result do
-      {id, _obj} -> {:ok, id}
-      nil -> {:error, :not_found}
+  def resolve(name) when is_binary(name) do
+    case match(name, []) do
+      {:ok, id} -> id
+      _ -> -1
     end
   end
 
   @doc """
-  Get a system object by symbolic name (without $ prefix).
-
-  Returns the object ID or -1 if not found.
-
-  Examples:
-    object(:login) => 10
-    object(:player) => 6
-    object(:wizard) => 2
-    object(:nothing) => -1
+  Find a core object by name (e.g. $player, $room).
   """
   def object(name) when is_atom(name) do
-    case resolve("$#{name}") do
-      {:ok, id} -> id
-      {:error, :not_found} -> -1
+    # Core objects are properties on #0
+    case DB.get_property(0, Atom.to_string(name)) do
+      {:ok, {:obj, id}} -> id
+      _ -> fallback_object(name)
     end
   end
+
+  defp resolve_id("#" <> id_str) do
+    case Integer.parse(id_str) do
+      {id, ""} -> {:ok, id}
+      _ -> {:error, :not_found}
+    end
+  end
+
+  defp search_candidates(name, ids) do
+    Enum.find_value(ids, {:error, :not_found}, fn id ->
+      case DB.get_object(id) do
+        {:ok, obj} ->
+          if matches_object?(obj, name), do: {:ok, id}, else: nil
+
+        _ ->
+          nil
+      end
+    end)
+  end
+
+  defp matches_object?(obj, name) do
+    # Check name (case-insensitive)
+    lower_name = String.downcase(name)
+
+    # In MOO, the "name" property is the definitive name
+    # We should check it first, falling back to the structural name
+    actual_name =
+      case DB.get_property(obj.id, "name") do
+        {:ok, {:str, n}} -> n
+        _ -> obj.name
+      end
+
+    if String.downcase(actual_name) == lower_name do
+      true
+    else
+      # Check aliases (if any)
+      case DB.get_property(obj.id, "aliases") do
+        {:ok, {:list, aliases}} ->
+          Enum.any?(aliases, fn
+            {:str, a} -> String.downcase(a) == lower_name
+            _ -> false
+          end)
+
+        _ ->
+          false
+      end
+    end
+  end
+
+  defp list_all_players do
+    # Get all user objects
+    DB.get_snapshot().objects
+    |> Map.values()
+    |> Enum.filter(fn obj ->
+      Alchemoo.Database.Flags.set?(obj.flags, Alchemoo.Database.Flags.user())
+    end)
+    |> Enum.map(& &1.id)
+  end
+
+  defp fallback_object(:player), do: 6
+  defp fallback_object(:room), do: 3
+  defp fallback_object(:login), do: 0
+  defp fallback_object(:network), do: 0
+  defp fallback_object(_), do: -1
 end
