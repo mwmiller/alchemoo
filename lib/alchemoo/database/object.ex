@@ -6,16 +6,19 @@ defmodule Alchemoo.Database.Object do
   defstruct [
     :id,
     :name,
-    :flags,
     :owner,
     :location,
-    :contents,
-    :next,
+    :first_content_id,
+    :next_id,
     :parent,
-    :child,
-    :sibling,
+    :first_child_id,
+    :sibling_id,
+    flags: 0,
+    contents: [],
+    children: [],
     verbs: [],
-    properties: []
+    properties: [],
+    overridden_properties: %{}
   ]
 
   @type t :: %__MODULE__{
@@ -24,12 +27,15 @@ defmodule Alchemoo.Database.Object do
           flags: integer(),
           owner: integer(),
           location: integer(),
-          contents: [integer()],
-          next: integer(),
+          first_content_id: integer(),
+          next_id: integer(),
           parent: integer(),
-          child: integer(),
-          sibling: integer(),
+          first_child_id: integer(),
+          sibling_id: integer(),
+          contents: [integer()],
+          children: [integer()],
           verbs: [Alchemoo.Database.Verb.t()],
-          properties: [Alchemoo.Database.Property.t()]
+          properties: [Alchemoo.Database.Property.t()],
+          overridden_properties: %{String.t() => Alchemoo.Database.Property.t()}
         }
 end

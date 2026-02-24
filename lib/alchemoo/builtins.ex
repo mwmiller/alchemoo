@@ -9,6 +9,7 @@ defmodule Alchemoo.Builtins do
 
   alias Alchemoo.Connection.Handler
   alias Alchemoo.Connection.Supervisor, as: ConnSupervisor
+  alias Alchemoo.Database.Flags
   alias Alchemoo.Database.Server, as: DBServer
   alias Alchemoo.Value
 
@@ -16,166 +17,198 @@ defmodule Alchemoo.Builtins do
   Call a built-in function by name with arguments.
   """
   def call(name, args) when is_binary(name) do
-    call(String.to_atom(name), args)
+    call(String.to_atom(name), args, %{})
+  end
+
+  def call(name, args) when is_atom(name) do
+    call(name, args, %{})
+  end
+
+  @doc """
+  Call a built-in function by name with arguments and environment.
+  """
+  def call(name, args, env) when is_binary(name) do
+    call(String.to_atom(name), args, env)
   end
 
   # Type conversion
-  def call(:typeof, args), do: typeof(args)
-  def call(:tostr, args), do: tostr(args)
-  def call(:toint, args), do: toint(args)
-  def call(:tonum, args), do: toint(args)
-  def call(:toobj, args), do: toobj(args)
-  def call(:toliteral, args), do: toliteral(args)
+  def call(:typeof, args, _env), do: typeof(args)
+  def call(:tostr, args, _env), do: tostr(args)
+  def call(:toint, args, _env), do: toint(args)
+  def call(:tonum, args, _env), do: toint(args)
+  def call(:toobj, args, _env), do: toobj(args)
+  def call(:toliteral, args, _env), do: toliteral(args)
 
   # List operations
-  def call(:length, args), do: length_fn(args)
-  def call(:is_member, args), do: member?(args)
-  def call(:listappend, args), do: listappend(args)
-  def call(:listinsert, args), do: listinsert(args)
-  def call(:listdelete, args), do: listdelete(args)
-  def call(:listset, args), do: listset(args)
-  def call(:setadd, args), do: setadd(args)
-  def call(:setremove, args), do: setremove(args)
-  def call(:sort, args), do: sort_fn(args)
+  def call(:length, args, _env), do: length_fn(args)
+  def call(:is_member, args, _env), do: member?(args)
+  def call(:listappend, args, _env), do: listappend(args)
+  def call(:listinsert, args, _env), do: listinsert(args)
+  def call(:listdelete, args, _env), do: listdelete(args)
+  def call(:listset, args, _env), do: listset(args)
+  def call(:setadd, args, _env), do: setadd(args)
+  def call(:setremove, args, _env), do: setremove(args)
+  def call(:sort, args, _env), do: sort_fn(args)
+  def call(:reverse, args, _env), do: reverse_fn(args)
 
   # Comparison
-  def call(:equal, args), do: equal(args)
+  def call(:equal, args, _env), do: equal(args)
 
   # Math
-  def call(:random, args), do: random_fn(args)
-  def call(:min, args), do: min_fn(args)
-  def call(:max, args), do: max_fn(args)
-  def call(:abs, args), do: abs_fn(args)
-  def call(:sqrt, args), do: sqrt_fn(args)
-  def call(:sin, args), do: sin_fn(args)
-  def call(:cos, args), do: cos_fn(args)
-  def call(:tan, args), do: tan_fn(args)
-  def call(:sinh, args), do: sinh_fn(args)
-  def call(:cosh, args), do: cosh_fn(args)
-  def call(:tanh, args), do: tanh_fn(args)
-  def call(:asin, args), do: asin_fn(args)
-  def call(:acos, args), do: acos_fn(args)
-  def call(:atan, args), do: atan_fn(args)
-  def call(:exp, args), do: exp_fn(args)
-  def call(:log, args), do: log_fn(args)
-  def call(:log10, args), do: log10_fn(args)
-  def call(:ceil, args), do: ceil_fn(args)
-  def call(:floor, args), do: floor_fn(args)
-  def call(:trunc, args), do: trunc_fn(args)
-  def call(:floatstr, args), do: floatstr(args)
+  def call(:random, args, _env), do: random_fn(args)
+  def call(:min, args, _env), do: min_fn(args)
+  def call(:max, args, _env), do: max_fn(args)
+  def call(:abs, args, _env), do: abs_fn(args)
+  def call(:sqrt, args, _env), do: sqrt_fn(args)
+  def call(:sin, args, _env), do: sin_fn(args)
+  def call(:cos, args, _env), do: cos_fn(args)
+  def call(:tan, args, _env), do: tan_fn(args)
+  def call(:sinh, args, _env), do: sinh_fn(args)
+  def call(:cosh, args, _env), do: cosh_fn(args)
+  def call(:tanh, args, _env), do: tanh_fn(args)
+  def call(:asin, args, _env), do: asin_fn(args)
+  def call(:acos, args, _env), do: acos_fn(args)
+  def call(:atan, args, _env), do: atan_fn(args)
+  def call(:atan2, args, _env), do: atan2_fn(args)
+  def call(:exp, args, _env), do: exp_fn(args)
+  def call(:log, args, _env), do: log_fn(args)
+  def call(:log10, args, _env), do: log10_fn(args)
+  def call(:ceil, args, _env), do: ceil_fn(args)
+  def call(:floor, args, _env), do: floor_fn(args)
+  def call(:trunc, args, _env), do: trunc_fn(args)
+  def call(:floatstr, args, _env), do: floatstr(args)
 
   # Time
-  def call(:time, args), do: time_fn(args)
-  def call(:ctime, args), do: ctime_fn(args)
+  def call(:time, args, _env), do: time_fn(args)
+  def call(:ctime, args, _env), do: ctime_fn(args)
 
   # Output/Communication
-  def call(:notify, args), do: notify(args)
-  def call(:connected_players, args), do: connected_players(args)
-  def call(:connection_name, args), do: connection_name(args)
-  def call(:boot_player, args), do: boot_player(args)
+  def call(:notify, args, _env), do: notify(args)
+  def call(:notify_except, args, _env), do: notify_except_fn(args)
+  def call(:connected_players, args, _env), do: connected_players(args)
+  def call(:connection_name, args, _env), do: connection_name(args)
+  def call(:boot_player, args, _env), do: boot_player(args)
+  def call(:flush_input, args, _env), do: flush_input_fn(args)
+  def call(:read, args, _env), do: read_fn(args)
+  def call(:connection_options, args, _env), do: connection_options(args)
+  def call(:connection_option, args, _env), do: connection_option(args)
+  def call(:set_connection_option, args, _env), do: set_connection_option(args)
+  def call(:output_delimiters, args, _env), do: output_delimiters(args)
+  def call(:set_output_delimiters, args, _env), do: set_output_delimiters(args)
 
   # Context
-  def call(:player, args), do: player_fn(args)
-  def call(:caller, args), do: caller_fn(args)
-  def call(:this, args), do: this_fn(args)
-  def call(:is_player, args), do: is_player(args)
-  def call(:players, args), do: players_fn(args)
-  def call(:set_player_flag, args), do: set_player_flag(args)
+  def call(:player, args, _env), do: player_fn(args)
+  def call(:caller, args, _env), do: caller_fn(args)
+  def call(:this, args, _env), do: this_fn(args)
+  def call(:is_player, args, _env), do: player?(args)
+  def call(:is_wizard, args, _env), do: wizard?(args)
+  def call(:players, args, _env), do: players_fn(args)
+  def call(:set_player_flag, args, _env), do: set_player_flag(args)
+  def call(:check_password, args, _env), do: check_password_fn(args)
 
   # String operations
-  def call(:index, args), do: index_fn(args)
-  def call(:rindex, args), do: rindex_fn(args)
-  def call(:strsub, args), do: strsub(args)
-  def call(:strcmp, args), do: strcmp(args)
-  def call(:explode, args), do: explode(args)
-  def call(:substitute, args), do: substitute(args)
-  def call(:match, args), do: match_fn(args)
-  def call(:rmatch, args), do: rmatch_fn(args)
-  def call(:decode_binary, args), do: decode_binary(args)
-  def call(:encode_binary, args), do: encode_binary(args)
-  def call(:crypt, args), do: crypt(args)
-  def call(:binary_hash, args), do: binary_hash(args)
+  def call(:index, args, _env), do: index_fn(args)
+  def call(:rindex, args, _env), do: rindex_fn(args)
+  def call(:strsub, args, _env), do: strsub(args)
+  def call(:strcmp, args, _env), do: strcmp(args)
+  def call(:explode, args, _env), do: explode(args)
+  def call(:substitute, args, _env), do: substitute(args)
+  def call(:match, args, _env), do: match_fn(args)
+  def call(:rmatch, args, _env), do: rmatch_fn(args)
+  def call(:decode_binary, args, _env), do: decode_binary(args)
+  def call(:encode_binary, args, _env), do: encode_binary(args)
+  def call(:crypt, args, _env), do: crypt(args)
+  def call(:binary_hash, args, _env), do: binary_hash(args)
+  def call(:value_hash, args, _env), do: value_hash_fn(args)
 
   # Object operations
-  def call(:valid, args), do: valid(args)
-  def call(:parent, args), do: parent_fn(args)
-  def call(:children, args), do: children(args)
-  def call(:max_object, args), do: max_object(args)
+  def call(:valid, args, _env), do: valid(args)
+  def call(:parent, args, _env), do: parent_fn(args)
+  def call(:children, args, _env), do: children(args)
+  def call(:max_object, args, _env), do: max_object(args)
+  def call(:chown, args, _env), do: chown(args)
+  def call(:renumber, args, _env), do: renumber(args)
+  def call(:reset_max_object, args, _env), do: reset_max_object(args)
+  def call(:match_object, args, env), do: match_object_fn(args, env)
 
   # Property operations
-  def call(:properties, args), do: properties(args)
-  def call(:property_info, args), do: property_info(args)
-  def call(:get_property, args), do: get_property(args)
-  def call(:set_property, args), do: set_property(args)
+  def call(:properties, args, _env), do: properties(args)
+  def call(:property_info, args, _env), do: property_info(args)
+  def call(:get_property, args, _env), do: get_property(args)
+  def call(:set_property, args, _env), do: set_property(args)
 
   # Object management
-  def call(:create, args), do: create(args)
-  def call(:recycle, args), do: recycle(args)
-  def call(:chparent, args), do: chparent(args)
-  def call(:move, args), do: move(args)
+  def call(:create, args, _env), do: create(args)
+  def call(:recycle, args, _env), do: recycle(args)
+  def call(:chparent, args, _env), do: chparent(args)
+  def call(:move, args, _env), do: move(args)
 
   # Verb management
-  def call(:verbs, args), do: verbs(args)
-  def call(:verb_info, args), do: verb_info(args)
-  def call(:set_verb_info, args), do: set_verb_info(args)
-  def call(:verb_args, args), do: verb_args(args)
-  def call(:set_verb_args, args), do: set_verb_args(args)
-  def call(:verb_code, args), do: verb_code(args)
-  def call(:add_verb, args), do: add_verb(args)
-  def call(:delete_verb, args), do: delete_verb(args)
-  def call(:set_verb_code, args), do: set_verb_code(args)
-  def call(:function_info, args), do: function_info(args)
-  def call(:disassemble, args), do: disassemble(args)
+  def call(:verbs, args, _env), do: verbs(args)
+  def call(:verb_info, args, _env), do: verb_info(args)
+  def call(:set_verb_info, args, _env), do: set_verb_info(args)
+  def call(:verb_args, args, _env), do: verb_args(args)
+  def call(:set_verb_args, args, _env), do: set_verb_args(args)
+  def call(:verb_code, args, _env), do: verb_code(args)
+  def call(:add_verb, args, _env), do: add_verb(args)
+  def call(:delete_verb, args, _env), do: delete_verb(args)
+  def call(:set_verb_code, args, _env), do: set_verb_code(args)
+  def call(:function_info, args, _env), do: function_info(args)
+  def call(:disassemble, args, _env), do: disassemble(args)
 
   # Property management
-  def call(:add_property, args), do: add_property(args)
-  def call(:delete_property, args), do: delete_property(args)
-  def call(:set_property_info, args), do: set_property_info(args)
-  def call(:is_clear_property, args), do: clear_property?(args)
-  def call(:clear_property, args), do: clear_property(args)
+  def call(:add_property, args, _env), do: add_property(args)
+  def call(:delete_property, args, _env), do: delete_property(args)
+  def call(:set_property_info, args, _env), do: set_property_info(args)
+  def call(:is_clear_property, args, _env), do: clear_property?(args)
+  def call(:clear_property, args, _env), do: clear_property(args)
 
   # Task management
-  def call(:suspend, args), do: suspend_fn(args)
-  def call(:task_id, args), do: task_id(args)
-  def call(:queued_tasks, args), do: queued_tasks(args)
-  def call(:kill_task, args), do: kill_task(args)
-  def call(:queue_info, args), do: queue_info(args)
-  def call(:raise, args), do: raise_fn(args)
-  def call(:call_function, args), do: call_function(args)
-  def call(:eval, args), do: eval_fn(args)
+  def call(:suspend, args, _env), do: suspend_fn(args)
+  def call(:yield, args, _env), do: yield_fn(args)
+  def call(:task_id, args, _env), do: task_id(args)
+  def call(:queued_tasks, args, _env), do: queued_tasks(args)
+  def call(:kill_task, args, _env), do: kill_task(args)
+  def call(:resume, args, _env), do: resume_fn(args)
+  def call(:task_stack, args, _env), do: task_stack(args)
+  def call(:queue_info, args, _env), do: queue_info(args)
+  def call(:raise, args, _env), do: raise_fn(args)
+  def call(:call_function, args, env), do: call_function(args, env)
+  def call(:eval, args, _env), do: eval_fn(args)
+  def call(:pass, args, env), do: pass_fn(args, env)
 
   # Security
-  def call(:caller_perms, args), do: caller_perms(args)
-  def call(:set_task_perms, args), do: set_task_perms(args)
-  def call(:callers, args), do: callers_fn(args)
+  def call(:caller_perms, args, _env), do: caller_perms(args)
+  def call(:set_task_perms, args, _env), do: set_task_perms(args)
+  def call(:callers, args, _env), do: callers_fn(args)
 
   # Network
-  def call(:idle_seconds, args), do: idle_seconds(args)
-  def call(:connected_seconds, args), do: connected_seconds(args)
-  def call(:buffered_output_length, args), do: buffered_output_length(args)
-  def call(:listen, args), do: listen(args)
-  def call(:unlisten, args), do: unlisten(args)
-  def call(:open_network_connection, args), do: open_network_connection(args)
+  def call(:idle_seconds, args, _env), do: idle_seconds(args)
+  def call(:connected_seconds, args, _env), do: connected_seconds(args)
+  def call(:buffered_output_length, args, _env), do: buffered_output_length(args)
+  def call(:listen, args, _env), do: listen(args)
+  def call(:unlisten, args, _env), do: unlisten(args)
+  def call(:open_network_connection, args, _env), do: open_network_connection(args)
 
   # Server management
-  def call(:server_version, args), do: server_version(args)
-  def call(:server_log, args), do: server_log(args)
-  def call(:shutdown, args), do: shutdown(args)
-  def call(:memory_usage, args), do: memory_usage(args)
-  def call(:db_disk_size, args), do: db_disk_size(args)
-  def call(:dump_database, args), do: dump_database(args)
-  def call(:server_started, args), do: server_started(args)
+  def call(:server_version, args, _env), do: server_version(args)
+  def call(:server_log, args, _env), do: server_log(args)
+  def call(:shutdown, args, _env), do: shutdown(args)
+  def call(:memory_usage, args, _env), do: memory_usage(args)
+  def call(:db_disk_size, args, _env), do: db_disk_size(args)
+  def call(:dump_database, args, _env), do: dump_database(args)
+  def call(:server_started, args, _env), do: server_started(args)
 
   # Utilities
-  def call(:force_input, args), do: force_input(args)
-  def call(:read_binary, args), do: read_binary(args)
-  def call(:object_bytes, args), do: object_bytes(args)
-  def call(:value_bytes, args), do: value_bytes(args)
-  def call(:ticks_left, args), do: ticks_left(args)
-  def call(:seconds_left, args), do: seconds_left(args)
+  def call(:force_input, args, _env), do: force_input(args)
+  def call(:read_binary, args, _env), do: read_binary(args)
+  def call(:object_bytes, args, _env), do: object_bytes(args)
+  def call(:value_bytes, args, _env), do: value_bytes(args)
+  def call(:ticks_left, args, _env), do: ticks_left(args)
+  def call(:seconds_left, args, _env), do: seconds_left(args)
 
   # Default
-  def call(_name, _args), do: {:err, :E_VERBNF}
+  def call(_name, _args, _env), do: {:err, :E_VERBNF}
 
   # typeof(value) - return type as integer
   defp typeof([val]) do
@@ -195,19 +228,107 @@ defmodule Alchemoo.Builtins do
 
   # suspend(seconds) - suspend task
   defp suspend_fn([{:num, seconds}]) when seconds >= 0 do
-    throw({:suspend, seconds})
+    wait_in_task(seconds * 1000)
   end
 
   defp suspend_fn(_), do: Value.err(:E_ARGS)
 
+  # resume(task_id [, value]) - resume suspended task
+  defp resume_fn([{:num, target_id}]) do
+    resume_fn([Value.num(target_id), Value.num(0)])
+  end
+
+  defp resume_fn([{:num, target_id}, value]) do
+    tasks = Alchemoo.Task.list_tasks()
+    found = Enum.find(tasks, fn {id, _pid, _meta} -> :erlang.phash2(id) == target_id end)
+
+    case found do
+      {_id, pid, _meta} ->
+        send(pid, {:resume, value})
+        Value.num(0)
+
+      nil ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp resume_fn(_), do: Value.err(:E_ARGS)
+
+  # yield() - yield execution
+  defp yield_fn([]) do
+    suspend_fn([Value.num(0)])
+  end
+
+  defp yield_fn(_), do: Value.err(:E_ARGS)
+
+  # read([player]) - read line of input from player
+  defp read_fn([]) do
+    player_id = get_task_context(:player) || 2
+    read_fn([Value.obj(player_id)])
+  end
+
+  defp read_fn([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        # Signal handler we are waiting
+        Handler.request_input(handler_pid, self())
+
+        # Wait for input while still handling GenServer calls
+        wait_for_input_or_call()
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp read_fn(_), do: Value.err(:E_ARGS)
+
+  defp wait_in_task(0), do: :ok
+
+  defp wait_in_task(timeout_ms) do
+    start_time = System.monotonic_time(:millisecond)
+
+    receive do
+      {:"$gen_call", from, :get_context} ->
+        context = Process.get(:task_context)
+        GenServer.reply(from, context)
+        elapsed = System.monotonic_time(:millisecond) - start_time
+        remaining = max(0, timeout_ms - elapsed)
+        wait_in_task(remaining)
+    after
+      timeout_ms ->
+        :ok
+    end
+  end
+
+  defp wait_for_input_or_call do
+    receive do
+      {:input_received, line} ->
+        Value.str(line)
+
+      {:"$gen_call", from, :get_context} ->
+        context = Process.get(:task_context)
+        GenServer.reply(from, context)
+        wait_for_input_or_call()
+    after
+      300_000 ->
+        # 5 minute timeout
+        Value.err(:E_PERM)
+    end
+  end
+
   # task_id() - get current task ID (integer)
   defp task_id([]) do
     case get_task_context(:id) do
-      nil -> Value.num(0)
+      nil ->
+        Value.num(0)
+
       id when is_reference(id) ->
         # Convert reference to integer for MOO
         Value.num(:erlang.phash2(id))
-      id when is_integer(id) -> Value.num(id)
+
+      id when is_integer(id) ->
+        Value.num(id)
     end
   end
 
@@ -218,13 +339,46 @@ defmodule Alchemoo.Builtins do
     tasks = Alchemoo.Task.list_tasks()
     # MOO expects a list of task IDs
     # Our list_tasks returns [{id, pid, metadata}]
-    ids = Enum.map(tasks, fn {id, _pid, _meta} ->
-      Value.num(:erlang.phash2(id))
-    end)
+    ids =
+      Enum.map(tasks, fn {id, _pid, _meta} ->
+        Value.num(:erlang.phash2(id))
+      end)
+
     Value.list(ids)
   end
 
   defp queued_tasks(_), do: Value.err(:E_ARGS)
+
+  # task_stack(id) - return call stack of a task
+  defp task_stack([{:num, target_id}]) do
+    tasks = Alchemoo.Task.list_tasks()
+    found = Enum.find(tasks, fn {id, _pid, _meta} -> :erlang.phash2(id) == target_id end)
+
+    case found do
+      {_id, pid, _meta} ->
+        # Get stack from task process GenServer.call
+        context = GenServer.call(pid, :get_context)
+        stack = context[:stack] || []
+        # Standard MOO format: list of lists
+        # {this, verb, owner, player, line_num}
+        # (Our stack entries: {this, verb_name, verb_owner, player, line})
+        Enum.map(stack, fn entry ->
+          Value.list([
+            Value.obj(entry.this),
+            Value.str(entry.verb_name),
+            Value.obj(entry.verb_owner),
+            Value.obj(entry.player),
+            Value.num(entry[:line] || 0)
+          ])
+        end)
+        |> Value.list()
+
+      nil ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp task_stack(_), do: Value.err(:E_ARGS)
 
   # kill_task(id) - terminate task
   defp kill_task([{:num, target_id}]) do
@@ -236,6 +390,7 @@ defmodule Alchemoo.Builtins do
         # Stop the task process
         GenServer.stop(pid, :normal)
         Value.num(1)
+
       nil ->
         # Task not found - this is E_INVARG in MOO
         Value.err(:E_INVARG)
@@ -257,14 +412,51 @@ defmodule Alchemoo.Builtins do
   defp raise_fn(_), do: Value.err(:E_ARGS)
 
   # call_function(name, args...) - dynamically call a built-in function
-  defp call_function([{:str, name} | args]) do
-    # Dispatch to the public call/2 function
-    call(String.to_atom(name), args)
+  defp call_function([{:str, name} | args], env) do
+    # Dispatch to the public call/3 function
+    call(String.to_atom(name), args, env)
   rescue
     _ -> Value.err(:E_VERBNF)
   end
 
-  defp call_function(_), do: Value.err(:E_ARGS)
+  defp call_function(_, _env), do: Value.err(:E_ARGS)
+
+  # pass(@args) - call same verb on parent
+  defp pass_fn(args, env) do
+    case {get_task_context(:verb_definer), get_task_context(:verb_name), Map.get(env, :runtime)} do
+      {definer_id, verb_name, runtime} when definer_id != nil and verb_name != nil and runtime != nil ->
+        execute_parent_verb(definer_id, verb_name, args, env, runtime)
+
+      _ ->
+        Value.err(:E_PERM)
+    end
+  end
+
+  defp execute_parent_verb(definer_id, verb_name, args, env, runtime) do
+    case Map.get(runtime.objects, definer_id) do
+      nil ->
+        # Fallback to DBServer if not in runtime.objects
+        case DBServer.get_object(definer_id) do
+          {:ok, definer} ->
+            do_pass_call(definer.parent, verb_name, args, env, runtime)
+
+          _ ->
+            Value.err(:E_INVIND)
+        end
+
+      definer ->
+        do_pass_call(definer.parent, verb_name, args, env, runtime)
+    end
+  end
+
+  defp do_pass_call(parent_id, verb_name, args, env, runtime) do
+    receiver_id = get_task_context(:this)
+
+    case Alchemoo.Runtime.call_verb(runtime, Value.obj(parent_id), verb_name, args, env, receiver_id) do
+      {:ok, result} -> result
+      {:error, err} -> err
+    end
+  end
 
   # eval(string) - evaluate MOO code synchronously
   defp eval_fn([{:str, code}]) do
@@ -273,11 +465,12 @@ defmodule Alchemoo.Builtins do
     # Convert context map to keyword list for Task.run
     context_map = Process.get(:task_context) || %{}
     opts = Enum.into(context_map, [])
-    
+
     case Alchemoo.Task.run(code, %{}, opts) do
       {:ok, result} ->
         # MOO eval returns {success, value}
         Value.list([Value.num(1), result])
+
       {:error, reason} ->
         # MOO eval returns {0, error_message}
         Value.list([Value.num(0), Value.str(inspect(reason))])
@@ -403,6 +596,8 @@ defmodule Alchemoo.Builtins do
   defp random_fn(_), do: Value.err(:E_ARGS)
 
   # min(numbers...) - minimum value
+  defp min_fn([{:list, items}]), do: min_fn(items)
+
   defp min_fn(args) do
     nums = Enum.map(args, fn {:num, n} -> n end)
     Value.num(Enum.min(nums))
@@ -411,6 +606,8 @@ defmodule Alchemoo.Builtins do
   end
 
   # max(numbers...) - maximum value
+  defp max_fn([{:list, items}]), do: max_fn(items)
+
   defp max_fn(args) do
     nums = Enum.map(args, fn {:num, n} -> n end)
     Value.num(Enum.max(nums))
@@ -488,12 +685,17 @@ defmodule Alchemoo.Builtins do
 
   ## Output/Communication
 
-  # notify(player, text) - send text to player
+  # notify(player, text [, no_newline]) - send text to player
   defp notify([{:obj, player_id}, {:str, text}]) do
+    notify([Value.obj(player_id), Value.str(text), Value.num(0)])
+  end
+
+  defp notify([{:obj, player_id}, {:str, text}, {:num, no_newline}]) do
     # Find connection for this player and send text
     case find_player_connection(player_id) do
       {:ok, handler_pid} ->
-        Handler.send_output(handler_pid, text <> "\n")
+        output = if no_newline != 0, do: text, else: text <> "\n"
+        Handler.send_output(handler_pid, output)
         Value.num(1)
 
       {:error, _} ->
@@ -503,6 +705,37 @@ defmodule Alchemoo.Builtins do
   end
 
   defp notify(_), do: Value.err(:E_ARGS)
+
+  # notify_except(room, text [, skip_list]) - send text to all in room except skip_list
+  defp notify_except_fn([{:obj, room_id}, {:str, text}]) do
+    notify_except_fn([Value.obj(room_id), Value.str(text), Value.list([])])
+  end
+
+  defp notify_except_fn([{:obj, room_id}, {:str, text}, {:list, skip_list}]) do
+    case DBServer.get_object(room_id) do
+      {:ok, room} ->
+        skip_ids = Enum.map(skip_list, fn {:obj, id} -> id end)
+
+        Enum.each(room.contents, fn obj_id ->
+          notify_if_not_skipped(obj_id, text, skip_ids)
+        end)
+
+        Value.num(0)
+
+      {:error, err} ->
+        Value.err(err)
+    end
+  end
+
+  defp notify_except_fn(_), do: Value.err(:E_ARGS)
+
+  defp notify_if_not_skipped(obj_id, text, skip_ids) do
+    if obj_id not in skip_ids do
+      if player?([Value.obj(obj_id)]) == Value.num(1) do
+        notify([Value.obj(obj_id), Value.str(text)])
+      end
+    end
+  end
 
   defp find_player_connection(player_id) do
     # Get all connection handlers and find one for this player
@@ -516,29 +749,53 @@ defmodule Alchemoo.Builtins do
     end)
   end
 
-  # connected_players() - list of connected player objects
+  # connected_players([full]) - list of connected player objects or info
   defp connected_players([]) do
-    connections = ConnSupervisor.list_connections()
+    connected_players([Value.num(0)])
+  end
 
-    player_ids =
-      Enum.flat_map(connections, fn pid ->
-        case Handler.info(pid) do
-          %{player_id: id, state: :logged_in} when id != nil -> [id]
-          _ -> []
-        end
-      end)
+  defp connected_players([{:num, full}]) do
+    player_info =
+      ConnSupervisor.list_connections()
+      |> Enum.flat_map(fn pid -> extract_player_info(pid, full != 0) end)
 
-    Value.list(Enum.map(player_ids, &Value.obj/1))
+    Value.list(player_info)
   end
 
   defp connected_players(_), do: Value.err(:E_ARGS)
 
+  defp extract_player_info(pid, full?) do
+    case Handler.info(pid) do
+      %{player_id: id, state: :logged_in} = info when id != nil ->
+        if full?, do: [get_full_player_info(id, info)], else: [Value.obj(id)]
+
+      _ ->
+        []
+    end
+  end
+
+  defp get_full_player_info(id, info) do
+    # Get name from DB
+    name =
+      case DBServer.get_property(id, "name") do
+        {:ok, {:str, n}} -> n
+        _ -> "Player ##{id}"
+      end
+
+    Value.list([
+      Value.obj(id),
+      Value.str(name),
+      Value.num(info.idle_seconds),
+      Value.num(System.system_time(:second) - info.connected_at)
+    ])
+  end
+
   # connection_name(player) - get connection info
   defp connection_name([{:obj, player_id}]) do
     case find_player_connection(player_id) do
-      {:ok, _handler_pid} ->
-        # TODO: Get actual connection info (IP, hostname)
-        Value.str("localhost")
+      {:ok, handler_pid} ->
+        info = Handler.info(handler_pid)
+        Value.str(info.peer_info)
 
       {:error, _} ->
         Value.err(:E_INVARG)
@@ -596,26 +853,52 @@ defmodule Alchemoo.Builtins do
 
   # set_task_perms(obj) - set current task permissions
   defp set_task_perms([{:obj, obj_id}]) do
-    # Only wizards can set permissions to other objects (simplified for now)
-    # TODO: Check wizard flag on current perms
-    set_task_context(:perms, obj_id)
-    set_task_context(:player, obj_id)
-    Value.num(1)
+    current_perms = get_task_context(:perms) || 2
+
+    # Check if current task is wizard or setting to self
+    can_set? =
+      case DBServer.get_object(current_perms) do
+        {:ok, obj} -> Flags.set?(obj.flags, Flags.wizard())
+        _ -> false
+      end
+
+    if can_set? or obj_id == current_perms do
+      set_task_context(:perms, obj_id)
+      set_task_context(:player, obj_id)
+      Value.num(1)
+    else
+      Value.err(:E_PERM)
+    end
   end
 
   defp set_task_perms(_), do: Value.err(:E_ARGS)
 
   # callers([full]) - get current call stack
   defp callers_fn([]) do
+    callers_fn([Value.num(0)])
+  end
+
+  defp callers_fn([{:num, full}]) do
     stack = get_task_context(:stack) || []
-    # Return stack as list of lists (simplified: {this, verb, owner, player})
+
     Enum.map(stack, fn entry ->
-      Value.list([
-        Value.obj(entry.this),
-        Value.str(entry.verb_name),
-        Value.obj(entry.verb_owner),
-        Value.obj(entry.player)
-      ])
+      if full != 0 do
+        Value.list([
+          Value.obj(entry.this),
+          Value.str(entry.verb_name),
+          Value.obj(entry.verb_owner),
+          Value.obj(entry.player),
+          Value.num(entry[:line] || 0),
+          Value.obj(entry[:perms] || entry.player)
+        ])
+      else
+        Value.list([
+          Value.obj(entry.this),
+          Value.str(entry.verb_name),
+          Value.obj(entry.verb_owner),
+          Value.obj(entry.player)
+        ])
+      end
     end)
     |> Value.list()
   end
@@ -856,7 +1139,7 @@ defmodule Alchemoo.Builtins do
   defp property_info([{:obj, obj_id}, {:str, prop_name}]) do
     case DBServer.get_property_info(obj_id, prop_name) do
       {:ok, {owner, perms}} ->
-        Value.list([Value.obj(owner), Value.str(perms)])
+        Value.list([Value.obj(owner), Value.str(format_perms(perms))])
 
       {:error, err} ->
         Value.err(err)
@@ -1009,8 +1292,8 @@ defmodule Alchemoo.Builtins do
   # verb_info(obj, verb) - get verb info
   defp verb_info([{:obj, obj_id}, {:str, verb_name}]) do
     case DBServer.get_verb_info(obj_id, verb_name) do
-      {:ok, {owner, perms, name}} ->
-        Value.list([Value.obj(owner), Value.str(Integer.to_string(perms)), Value.str(name)])
+      {:ok, {owner, perms, names}} ->
+        Value.list([Value.obj(owner), Value.str(format_perms(perms)), Value.str(names)])
 
       {:error, err} ->
         Value.err(err)
@@ -1018,6 +1301,18 @@ defmodule Alchemoo.Builtins do
   end
 
   defp verb_info(_), do: Value.err(:E_ARGS)
+
+  defp format_perms(perms) when is_integer(perms) do
+    # Bitmask to string: 1=r, 2=w, 4=x, 8=d (typical MOO)
+    r = if (perms &&& 1) != 0, do: "r", else: ""
+    w = if (perms &&& 2) != 0, do: "w", else: ""
+    x = if (perms &&& 4) != 0, do: "x", else: ""
+    d = if (perms &&& 8) != 0, do: "d", else: ""
+    r <> w <> x <> d
+  end
+
+  defp format_perms(perms) when is_binary(perms), do: perms
+  defp format_perms(_), do: ""
 
   # set_verb_info(obj, verb, info) - set verb info
   defp set_verb_info([{:obj, obj_id}, {:str, verb_name}, {:list, info}]) do
@@ -1040,9 +1335,9 @@ defmodule Alchemoo.Builtins do
 
     perms =
       case Enum.at(info, 1) do
-        {:str, p} -> parse_perms(p)
-        {:num, p} -> p
-        _ -> 173
+        {:str, p} -> p
+        {:num, p} -> Integer.to_string(p)
+        _ -> "rx"
       end
 
     name =
@@ -1052,13 +1347,6 @@ defmodule Alchemoo.Builtins do
       end
 
     {owner, perms, name}
-  end
-
-  defp parse_perms(p) do
-    case Integer.parse(p) do
-      {n, _} -> n
-      :error -> 173
-    end
   end
 
   # verb_args(obj, verb) - get verb args
@@ -1106,30 +1394,75 @@ defmodule Alchemoo.Builtins do
 
   defp set_verb_args(_), do: Value.err(:E_ARGS)
 
-  # verb_code(obj, verb) - get verb code
+  # verb_code(obj, verb [, full_info]) - get verb code
   defp verb_code([{:obj, obj_id}, {:str, verb_name}]) do
+    verb_code([Value.obj(obj_id), Value.str(verb_name), Value.num(0)])
+  end
+
+  defp verb_code([{:obj, obj_id}, {:str, verb_name}, {:num, full_info}]) do
     case DBServer.get_object(obj_id) do
-      {:ok, obj} -> get_verb_code_from_object(obj, verb_name)
-      {:error, err} -> Value.err(err)
+      {:ok, obj} ->
+        extract_verb_code_info(obj, verb_name, full_info != 0)
+
+      {:error, err} ->
+        Value.err(err)
     end
   end
 
   defp verb_code(_), do: Value.err(:E_ARGS)
 
-  defp get_verb_code_from_object(obj, verb_name) do
-    case Enum.find(obj.verbs, fn v -> v.name == verb_name end) do
+  defp extract_verb_code_info(obj, verb_name, full_info?) do
+    case Enum.find(obj.verbs, fn v -> matches_verb?(v, verb_name) end) do
       nil ->
         Value.err(:E_VERBNF)
 
       verb ->
-        # Return list of code lines
-        lines = Enum.map(verb.code, &Value.str/1)
-        Value.list(lines)
+        code_lines = Enum.map(verb.code, &Value.str/1)
+
+        if full_info? do
+          Value.list([
+            Value.list(code_lines),
+            Value.obj(verb.owner),
+            Value.str(format_perms(verb.perms)),
+            Value.str(verb.name),
+            format_verb_args(verb.args)
+          ])
+        else
+          Value.list(code_lines)
+        end
     end
   end
 
-  # add_verb(obj, info, code) - add verb
-  defp add_verb([{:obj, obj_id}, {:list, info}, {:list, code}]) do
+  defp matches_verb?(verb, verb_name) do
+    # Use same logic as DBServer
+    verb.name
+    |> String.split(" ")
+    |> Enum.any?(fn pattern ->
+      match_pattern?(pattern, verb_name)
+    end)
+  end
+
+  defp match_pattern?(pattern, input) do
+    case String.split(pattern, "*", parts: 2) do
+      [_exact] ->
+        pattern == input
+
+      [prefix, rest] ->
+        full = prefix <> rest
+        String.starts_with?(input, prefix) and String.starts_with?(full, input)
+    end
+  end
+
+  defp format_verb_args({dobj, prep, iobj}) do
+    Value.list([
+      Value.str(Atom.to_string(dobj)),
+      Value.str(Atom.to_string(prep)),
+      Value.str(Atom.to_string(iobj))
+    ])
+  end
+
+  # add_verb(obj, info, args) - add verb
+  defp add_verb([{:obj, obj_id}, {:list, info}, {:list, args}]) do
     # Extract info: {owner, perms, name}
     owner =
       case Enum.at(info, 0) do
@@ -1149,20 +1482,37 @@ defmodule Alchemoo.Builtins do
         _ -> "verb"
       end
 
-    # Convert code lines to strings
-    code_lines =
-      Enum.map(code, fn
-        {:str, line} -> line
-        _ -> ""
-      end)
+    verb_args = extract_verb_args(args)
 
-    case DBServer.add_verb(obj_id, name, owner, perms, code_lines) do
+    case DBServer.add_verb(obj_id, name, owner, perms, verb_args) do
       :ok -> Value.num(0)
       {:error, err} -> Value.err(err)
     end
   end
 
   defp add_verb(_), do: Value.err(:E_ARGS)
+
+  defp extract_verb_args(args) do
+    dobj =
+      case Enum.at(args, 0) do
+        {:str, s} -> String.to_atom(s)
+        _ -> :none
+      end
+
+    prep =
+      case Enum.at(args, 1) do
+        {:str, s} -> String.to_atom(s)
+        _ -> :none
+      end
+
+    iobj =
+      case Enum.at(args, 2) do
+        {:str, s} -> String.to_atom(s)
+        _ -> :none
+      end
+
+    {dobj, prep, iobj}
+  end
 
   # delete_verb(obj, verb) - delete verb
   defp delete_verb([{:obj, obj_id}, {:str, verb_name}]) do
@@ -1192,24 +1542,45 @@ defmodule Alchemoo.Builtins do
   defp set_verb_code(_), do: Value.err(:E_ARGS)
 
   # function_info(name) - get built-in function metadata
-  defp function_info([{:str, _name}]) do
+  defp function_info([{:str, name}]) do
     # Return {min_args, max_args, types}
-    # For now, return a generic signature: 0 to -1 args, any types
-    # Real implementation would look up actual signatures
-    Value.list([Value.num(0), Value.num(-1), Value.list([])])
+    # Types is a list of type codes: 0=num, 1=obj, 2=str, 3=err, 4=list, -1=any
+    info = get_function_signature(name)
+
+    Value.list(
+      Enum.map(info, fn
+        val when is_integer(val) -> Value.num(val)
+        val when is_list(val) -> Value.list(Enum.map(val, &Value.num/1))
+      end)
+    )
   end
 
   defp function_info(_), do: Value.err(:E_ARGS)
 
+  defp get_function_signature(name) do
+    signatures = %{
+      "typeof" => [1, 1, [any_type()]],
+      "tostr" => [0, -1, []],
+      "toint" => [1, 1, [any_type()]],
+      "toobj" => [1, 1, [any_type()]],
+      "length" => [1, 1, [any_type()]],
+      "notify" => [2, 3, [1, 2, 0]],
+      "player" => [0, 0, []],
+      "caller" => [0, 0, []],
+      "this" => [0, 0, []],
+      "random" => [0, 1, [0]],
+      "suspend" => [1, 1, [0]],
+      "read" => [0, 1, [1]]
+    }
+
+    Map.get(signatures, name, [0, -1, []])
+  end
+
+  defp any_type, do: -1
+
   # disassemble(obj, verb) - return compiled code representation
   defp disassemble([{:obj, obj_id}, {:str, verb_name}]) do
-    # Since we are an AST interpreter, "disassembly" is effectively just the source
-    # or an AST dump. For compatibility, we'll return the source lines
-    # which is what verb_code does.
-    case DBServer.get_object(obj_id) do
-      {:ok, obj} -> get_verb_code_from_object(obj, verb_name)
-      {:error, err} -> Value.err(err)
-    end
+    verb_code([Value.obj(obj_id), Value.str(verb_name)])
   end
 
   defp disassemble(_), do: Value.err(:E_ARGS)
@@ -1252,7 +1623,8 @@ defmodule Alchemoo.Builtins do
   # clear_property(obj, name) - clear property to default
   defp clear_property([{:obj, obj_id}, {:str, name}]) do
     case DBServer.set_property(obj_id, name, :clear) do
-      {:ok, _} -> Value.num(0)
+      :ok -> Value.num(1)
+      {:ok, _} -> Value.num(1)
       {:error, err} -> Value.err(err)
     end
   end
@@ -1443,12 +1815,10 @@ defmodule Alchemoo.Builtins do
 
   # decode_binary(str) - decode binary string (MOO ~XX format)
   defp decode_binary([{:str, str}]) do
-    try do
-      decoded = do_decode_binary(str)
-      Value.str(decoded)
-    rescue
-      _ -> Value.err(:E_INVARG)
-    end
+    decoded = do_decode_binary(str)
+    Value.str(decoded)
+  rescue
+    _ -> Value.err(:E_INVARG)
   end
 
   defp decode_binary(_), do: Value.err(:E_ARGS)
@@ -1456,7 +1826,9 @@ defmodule Alchemoo.Builtins do
   defp do_decode_binary(str) do
     Regex.replace(~r/~([0-9A-Fa-f]{2}|~)/, str, fn _, match ->
       case match do
-        "~" -> "~"
+        "~" ->
+          "~"
+
         hex ->
           <<byte>> = Base.decode16!(String.upcase(hex))
           <<byte>>
@@ -1490,13 +1862,10 @@ defmodule Alchemoo.Builtins do
   end
 
   defp crypt([{:str, text}, {:str, salt}]) do
-    # MOO crypt traditionally uses crypt(3)
-    # We'll use a SHA-256 hash prefixed with the salt as a modern alternative
-    # since standard crypt(3) is not built into Elixir/Erlang.
-    hash = :crypto.hash(:sha256, salt <> text) |> Base.encode16(case: :lower)
-    # Traditional MOO crypt only returns a short string, but we'll return more for security
-    # though we should probably stick to a format that looks like what MOO expects if possible.
-    Value.str(salt <> String.slice(hash, 0, 10))
+    # MOO crypt traditionally uses only the first 2 characters of the salt
+    short_salt = String.slice(salt, 0, 2)
+    hash = :crypto.hash(:sha256, short_salt <> text) |> Base.encode16(case: :lower)
+    Value.str(short_salt <> String.slice(hash, 0, 10))
   end
 
   defp crypt(_), do: Value.err(:E_ARGS)
@@ -1508,6 +1877,33 @@ defmodule Alchemoo.Builtins do
   end
 
   defp binary_hash(_), do: Value.err(:E_ARGS)
+
+  # value_hash(value [, algorithm]) - hash any value
+  defp value_hash_fn([val]) do
+    value_hash_fn([val, Value.str("md5")])
+  end
+
+  defp value_hash_fn([val, {:str, algorithm}]) do
+    literal = Value.to_literal(val)
+
+    algo_atom =
+      case String.downcase(algorithm) do
+        "md5" -> :md5
+        "sha1" -> :sha
+        "sha" -> :sha
+        "sha256" -> :sha256
+        _ -> nil
+      end
+
+    if algo_atom do
+      hash = :crypto.hash(algo_atom, literal) |> Base.encode16(case: :lower)
+      Value.str(hash)
+    else
+      Value.err(:E_INVARG)
+    end
+  end
+
+  defp value_hash_fn(_), do: Value.err(:E_ARGS)
 
   ## List Operations
 
@@ -1522,6 +1918,17 @@ defmodule Alchemoo.Builtins do
   end
 
   defp sort_fn(_), do: Value.err(:E_ARGS)
+
+  # reverse(list_or_str) - reverse list or string
+  defp reverse_fn([{:list, items}]) do
+    Value.list(Enum.reverse(items))
+  end
+
+  defp reverse_fn([{:str, str}]) do
+    Value.str(String.reverse(str))
+  end
+
+  defp reverse_fn(_), do: Value.err(:E_ARGS)
 
   # Helper: compare MOO values for sorting
   defp compare_values({:num, a}, {:num, b}), do: a - b
@@ -1552,8 +1959,8 @@ defmodule Alchemoo.Builtins do
   defp server_version(_), do: Value.err(:E_ARGS)
 
   # server_log(message) - log message to server log
-  defp server_log([{:str, message}]) do
-    Logger.info("MOO: #{message}")
+  defp server_log([message | _]) do
+    Logger.info("MOO: #{Value.to_literal(message)}")
     Value.num(1)
   end
 
@@ -1577,6 +1984,131 @@ defmodule Alchemoo.Builtins do
 
   defp shutdown(_), do: Value.err(:E_ARGS)
 
+  # chown(obj, owner) - change object owner
+  defp chown([{:obj, obj_id}, {:obj, owner_id}]) do
+    case DBServer.chown_object(obj_id, owner_id) do
+      :ok -> Value.num(0)
+      {:error, err} -> Value.err(err)
+    end
+  end
+
+  defp chown(_), do: Value.err(:E_ARGS)
+
+  # renumber(obj) - renumber an object to the lowest available ID
+  defp renumber([{:obj, obj_id}]) do
+    case DBServer.renumber_object(obj_id) do
+      {:ok, new_id} -> Value.obj(new_id)
+      {:error, err} -> Value.err(err)
+    end
+  end
+
+  defp renumber(_), do: Value.err(:E_ARGS)
+
+  # reset_max_object() - reset max_object to the highest current ID
+  defp reset_max_object([]) do
+    DBServer.reset_max_object()
+    Value.num(0)
+  end
+
+  defp reset_max_object(_), do: Value.err(:E_ARGS)
+
+  # match_object(string, objects) - find object by name/alias in list
+  defp match_object_fn([{:str, name}, {:list, objects}], env) do
+    search_name = String.downcase(name)
+
+    case resolve_special_object(search_name) do
+      {:ok, obj} -> obj
+      :not_special -> find_match_in_list(search_name, objects, env)
+    end
+  end
+
+  defp match_object_fn(_, _env), do: Value.err(:E_ARGS)
+
+  defp resolve_special_object("me"), do: {:ok, Value.obj(get_task_context(:player) || 2)}
+
+  defp resolve_special_object("here") do
+    player_id = get_task_context(:player) || 2
+
+    case DBServer.get_object(player_id) do
+      {:ok, player} -> {:ok, Value.obj(player.location)}
+      _ -> {:ok, Value.obj(-1)}
+    end
+  end
+
+  defp resolve_special_object("#" <> id_str) do
+    case Integer.parse(id_str) do
+      {id, ""} -> {:ok, Value.obj(id)}
+      _ -> {:ok, Value.obj(-1)}
+    end
+  end
+
+  defp resolve_special_object(_), do: :not_special
+
+  defp find_match_in_list(name, objects, env) do
+    # Try exact name match first
+    result =
+      Enum.find_value(objects, nil, fn
+        {:obj, id} ->
+          if object_matches_name?(id, name, env), do: {:obj, id}, else: nil
+
+        _ ->
+          nil
+      end)
+
+    result || Value.obj(-1)
+  end
+
+  defp object_matches_name?(id, name, env) do
+    case get_object_for_match(id, env) do
+      {:ok, obj} ->
+        # Check name
+        if String.downcase(obj.name) == name do
+          true
+        else
+          # Check aliases property if it exists
+          check_aliases(obj, name, env)
+        end
+
+      _ ->
+        false
+    end
+  end
+
+  defp get_object_for_match(id, env) do
+    runtime = Map.get(env, :runtime)
+
+    if runtime do
+      case Map.get(runtime.objects, id) do
+        nil -> DBServer.get_object(id)
+        obj -> {:ok, obj}
+      end
+    else
+      DBServer.get_object(id)
+    end
+  end
+
+  defp check_aliases(obj, name, env) do
+    runtime = Map.get(env, :runtime)
+
+    aliases =
+      if runtime do
+        case Alchemoo.Runtime.get_property(runtime, Value.obj(obj.id), "aliases") do
+          {:ok, {:list, items}} -> items
+          _ -> []
+        end
+      else
+        case DBServer.get_property(obj.id, "aliases") do
+          {:ok, {:list, items}} -> items
+          _ -> []
+        end
+      end
+
+    Enum.any?(aliases, fn
+      {:str, s} -> String.downcase(s) == name
+      _ -> false
+    end)
+  end
+
   # boot_player(player) - disconnect player
   defp boot_player([{:obj, player_id}]) do
     case find_player_connection(player_id) do
@@ -1591,22 +2123,171 @@ defmodule Alchemoo.Builtins do
 
   defp boot_player(_), do: Value.err(:E_ARGS)
 
-  # is_player(obj) - check if object is a player
-  defp is_player([{:obj, obj_id}]) do
+  # flush_input([player]) - flush input for player
+  defp flush_input_fn([]) do
+    player_id = get_task_context(:player) || 2
+    flush_input_fn([Value.obj(player_id)])
+  end
+
+  defp flush_input_fn([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        Handler.flush_input(handler_pid)
+        Value.num(0)
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp flush_input_fn(_), do: Value.err(:E_ARGS)
+
+  # connection_options(player) - list available connection options
+  defp connection_options([]) do
+    player_id = get_task_context(:player) || 2
+    connection_options([Value.obj(player_id)])
+  end
+
+  defp connection_options([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        options = GenServer.call(handler_pid, :get_connection_options)
+        Value.list(Enum.map(options, &Value.str/1))
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp connection_options(_), do: Value.err(:E_ARGS)
+
+  # connection_option(player, option) - get value of a connection option
+  defp connection_option([{:obj, player_id}, {:str, name}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        case GenServer.call(handler_pid, {:get_connection_option, name}) do
+          [prefix, suffix] when name == "output-delimiters" ->
+            Value.list([Value.str(prefix), Value.str(suffix)])
+
+          val when is_integer(val) ->
+            Value.num(val)
+
+          val when is_binary(val) ->
+            Value.str(val)
+
+          _ ->
+            Value.err(:E_INVARG)
+        end
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp connection_option([{:str, name}]) do
+    player_id = get_task_context(:player) || 2
+    connection_option([Value.obj(player_id), Value.str(name)])
+  end
+
+  defp connection_option(_), do: Value.err(:E_ARGS)
+
+  # set_connection_option(player, option, value) - set value of a connection option
+  defp set_connection_option([{:obj, player_id}, {:str, name}, value]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        # Convert MOO value to internal type
+        internal_val =
+          case value do
+            {:num, n} ->
+              n
+
+            {:str, s} ->
+              s
+
+            {:list, [{:str, p}, {:str, s}]} when name == "output-delimiters" ->
+              [p, s]
+
+            _ ->
+              nil
+          end
+
+        if internal_val != nil do
+          GenServer.cast(handler_pid, {:set_connection_option, name, internal_val})
+          Value.num(0)
+        else
+          Value.err(:E_INVARG)
+        end
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp set_connection_option([{:str, name}, value]) do
+    player_id = get_task_context(:player) || 2
+    set_connection_option([Value.obj(player_id), Value.str(name), value])
+  end
+
+  defp set_connection_option(_), do: Value.err(:E_ARGS)
+
+  # output_delimiters([player]) - get output delimiters for player
+  defp output_delimiters([]) do
+    player_id = get_task_context(:player) || 2
+    output_delimiters([Value.obj(player_id)])
+  end
+
+  defp output_delimiters([{:obj, player_id}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        [prefix, suffix] = GenServer.call(handler_pid, :get_output_delimiters)
+        Value.list([Value.str(prefix), Value.str(suffix)])
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp output_delimiters(_), do: Value.err(:E_ARGS)
+
+  # set_output_delimiters(player, prefix, suffix) - set output delimiters for player
+  defp set_output_delimiters([{:obj, player_id}, {:str, prefix}, {:str, suffix}]) do
+    case find_player_connection(player_id) do
+      {:ok, handler_pid} ->
+        GenServer.cast(handler_pid, {:set_output_delimiters, [prefix, suffix]})
+        Value.num(0)
+
+      {:error, _} ->
+        Value.err(:E_INVARG)
+    end
+  end
+
+  defp set_output_delimiters(_), do: Value.err(:E_ARGS)
+
+  # player? - check if object is a player
+  defp player?([{:obj, obj_id}]) do
     case DBServer.get_object(obj_id) do
       {:ok, obj} ->
-        # Bit 0 is USER/PLAYER flag
-        case (obj.flags &&& 1) != 0 do
-          true -> Value.num(1)
-          false -> Value.num(0)
-        end
+        if Flags.set?(obj.flags, Flags.user()), do: Value.num(1), else: Value.num(0)
 
       {:error, _} ->
         Value.num(0)
     end
   end
 
-  defp is_player(_), do: Value.err(:E_ARGS)
+  defp player?(_), do: Value.err(:E_ARGS)
+
+  # wizard? - check if object is a wizard
+  defp wizard?([{:obj, obj_id}]) do
+    case DBServer.get_object(obj_id) do
+      {:ok, obj} ->
+        if Flags.set?(obj.flags, Flags.wizard()), do: Value.num(1), else: Value.num(0)
+
+      {:error, _} ->
+        Value.num(0)
+    end
+  end
+
+  defp wizard?(_), do: Value.err(:E_ARGS)
 
   # players() - list all player objects in database
   defp players_fn([]) do
@@ -1617,7 +2298,7 @@ defmodule Alchemoo.Builtins do
     player_ids =
       db.objects
       |> Map.values()
-      |> Enum.filter(fn obj -> (obj.flags &&& 1) != 0 end)
+      |> Enum.filter(fn obj -> Flags.set?(obj.flags, Flags.user()) end)
       |> Enum.map(fn obj -> Value.obj(obj.id) end)
 
     Value.list(player_ids)
@@ -1695,33 +2376,52 @@ defmodule Alchemoo.Builtins do
     # Assuming application started when this beam node started
     # Or we could store start time in an Agent/Application env
     # For now, use System.system_time(:second) - uptime
-    start_time = System.system_time(:second) - div(:erlang.statistics(:wall_clock) |> elem(0), 1000)
+    start_time =
+      System.system_time(:second) - div(:erlang.statistics(:wall_clock) |> elem(0), 1000)
+
     Value.num(start_time)
   end
 
   defp server_started(_), do: Value.err(:E_ARGS)
 
-  # force_input(player, text) - insert command into player queue
+  # force_input(player, text [, is_binary]) - insert command into player queue
   defp force_input([{:obj, player_id}, {:str, text}]) do
+    force_input([Value.obj(player_id), Value.str(text), Value.num(0)])
+  end
+
+  defp force_input([{:obj, player_id}, {:str, text}, {:num, is_binary}]) do
     case find_player_connection(player_id) do
       {:ok, handler_pid} ->
-        # We need to expose an input function on Handler
-        Handler.input(handler_pid, text <> "\n")
+        input_text = if is_binary != 0, do: text, else: text <> "\n"
+        Handler.input(handler_pid, input_text)
         Value.num(1)
 
       {:error, _} ->
-        # Player not connected or invalid
-        # MOO manual says E_INVARG if player not connected
         Value.err(:E_INVARG)
     end
   end
 
   defp force_input(_), do: Value.err(:E_ARGS)
 
-  # read_binary(filename) - read file (restricted)
-  defp read_binary([{:str, _filename}]) do
-    # Disabled for security by default
-    Value.err(:E_PERM)
+  # read_binary(filename) - read file from restricted directory
+  defp read_binary([{:str, filename}]) do
+    if wizard?([player_fn([])]) == Value.num(1) do
+      # Restrict to 'files/' directory for security
+      base_dir = Application.get_env(:alchemoo, :binary_dir, "files")
+      # Prevent directory traversal
+      clean_filename = Path.basename(filename)
+      path = Path.join(base_dir, clean_filename)
+
+      case File.read(path) do
+        {:ok, binary} ->
+          Value.str(binary)
+
+        {:error, _} ->
+          Value.err(:E_INVARG)
+      end
+    else
+      Value.err(:E_PERM)
+    end
   end
 
   defp read_binary(_), do: Value.err(:E_ARGS)
@@ -1755,10 +2455,14 @@ defmodule Alchemoo.Builtins do
 
   # seconds_left() - get remaining seconds
   defp seconds_left([]) do
-    # Simplified: assume 1 second per 1000 ticks or similar, 
-    # or just return a large number if we don't have a real time limit
-    # Task timeout is usually 30s
-    Value.num(30)
+    case get_task_context(:started_at) do
+      nil ->
+        Value.num(30)
+
+      started_at ->
+        elapsed = System.monotonic_time(:second) - started_at
+        Value.num(max(0, 30 - elapsed))
+    end
   end
 
   defp seconds_left(_), do: Value.err(:E_ARGS)
@@ -1772,6 +2476,23 @@ defmodule Alchemoo.Builtins do
   end
 
   defp set_player_flag(_), do: Value.err(:E_ARGS)
+
+  defp check_password_fn([{:obj, player_id}, {:str, password}]) do
+    case DBServer.get_property(player_id, "password") do
+      {:ok, {:str, hash}} ->
+        # Verify hash
+        case crypt([Value.str(password), Value.str(hash)]) do
+          {:str, ^hash} -> Value.num(1)
+          _ -> Value.num(0)
+        end
+
+      _ ->
+        # If no password set, allow empty password
+        if password == "", do: Value.num(1), else: Value.num(0)
+    end
+  end
+
+  defp check_password_fn(_), do: Value.err(:E_ARGS)
 
   # buffered_output_length([player]) - get output queue size
   defp buffered_output_length([]) do
@@ -1796,18 +2517,24 @@ defmodule Alchemoo.Builtins do
 
   # listen(obj, point) - start listening for connections
   defp listen([{:obj, _obj}, {:num, _point}]) do
-    # TODO: Implement dynamic listener starting via Network.Supervisor
-    # Requires wizard permissions
-    # For now, return E_PERM to indicate not allowed/supported yet
-    Value.err(:E_PERM)
+    if wizard?([Value.obj(get_task_context(:perms) || 2)]) == Value.num(1) do
+      # TODO: Implement dynamic listener starting via Network.Supervisor
+      Value.err(:E_PERM)
+    else
+      Value.err(:E_PERM)
+    end
   end
 
   defp listen(_), do: Value.err(:E_ARGS)
 
   # unlisten(point) - stop listening
   defp unlisten([{:num, _point}]) do
-    # TODO: Implement dynamic listener stopping
-    Value.err(:E_PERM)
+    if wizard?([Value.obj(get_task_context(:perms) || 2)]) == Value.num(1) do
+      # TODO: Implement dynamic listener stopping
+      Value.err(:E_PERM)
+    else
+      Value.err(:E_PERM)
+    end
   end
 
   defp unlisten(_), do: Value.err(:E_ARGS)
@@ -1869,6 +2596,9 @@ defmodule Alchemoo.Builtins do
 
   defp atan_fn([{:num, n}]), do: Value.num(trunc(:math.atan(n) * 1000))
   defp atan_fn(_), do: Value.err(:E_ARGS)
+
+  defp atan2_fn([{:num, y}, {:num, x}]), do: Value.num(trunc(:math.atan2(y, x) * 1000))
+  defp atan2_fn(_), do: Value.err(:E_ARGS)
 
   defp exp_fn([{:num, n}]), do: Value.num(trunc(:math.exp(n) * 1000))
   defp exp_fn(_), do: Value.err(:E_ARGS)

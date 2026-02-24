@@ -9,13 +9,15 @@ defmodule Alchemoo.Database do
     :version,
     :object_count,
     :clock,
-    objects: %{}
+    objects: %{},
+    max_object: -1
   ]
 
   @type t :: %__MODULE__{
           version: integer(),
           object_count: integer(),
           clock: integer(),
-          objects: %{integer() => Object.t()}
+          objects: %{integer() => Object.t()},
+          max_object: integer()
         }
 end

@@ -1,31 +1,25 @@
 defmodule Alchemoo.Version do
   @moduledoc """
-  Version information for Alchemoo.
+  Server version and information.
   """
 
-  @version Mix.Project.config()[:version]
+  @version "0.2.0"
 
   def version, do: @version
 
   def banner do
-    # CONFIG: :alchemoo, :moo_name
-    moo_name = Application.get_env(:alchemoo, :moo_name, "Alchemoo")
+    banner("Alchemoo")
+  end
 
-    # CONFIG: :alchemoo, :welcome_text
-    intro_text =
-      Application.get_env(:alchemoo, :welcome_text, "A Modern LambdaMOO Server on the BEAM")
-
+  def banner(moo_name) do
     """
-
-    ═══════════════════════════════════════════════════════════
-
-              ✨ #{String.upcase(moo_name)} ✨
-
-              #{intro_text} 💧
-
-              Running Alchemoo v#{@version}
-
-    ═══════════════════════════════════════════════════════════
+    ---------------------------------------------------------
+    Welcome to #{moo_name}
+    Running on Alchemoo v#{@version} (BEAM)
+    ---------------------------------------------------------
+    Type 'connect <name> <password>' to log in.
+    Type 'create <name> <password>' to create a new player.
+    Type 'help' for more commands.
     """
   end
 end

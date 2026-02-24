@@ -9,6 +9,7 @@ defmodule Alchemoo.Database.Parser do
   4. Footer with clocks and queued tasks
   """
   require Logger
+  import Bitwise
 
   alias Alchemoo.Database
   alias Alchemoo.Database.{Object, Property, Verb}
@@ -34,17 +35,91 @@ defmodule Alchemoo.Database.Parser do
   def parse(content) do
     lines = String.split(content, ~r/\r?\n/)
 
+    case do_parse(lines) do
+      {:ok, _} = res -> res
+      {:error, reason} = err ->
+        IO.inspect(reason, label: "Database.Parser: parse error")
+        err
+    end
+  end
+
+  defp do_parse(lines) do
     with {:ok, version, lines} <- parse_header(lines),
          {:ok, metadata, lines} <- parse_metadata(lines, version),
          {:ok, objects, lines} <- parse_objects(lines, metadata),
          {:ok, objects_with_code} <- parse_verb_code(lines, objects) do
+      # Post-process: convert linked lists to Elixir lists AND resolve inherited property names
+      objects_with_lists = build_relationship_lists(objects_with_code)
+      objects_final = resolve_all_properties(objects_with_lists)
+
       {:ok,
        %Database{
          version: version,
          object_count: metadata.object_count,
          clock: metadata.clock,
-         objects: objects_with_code
+         objects: objects_final,
+         max_object: Enum.max(Map.keys(objects_final), fn -> -1 end)
        }}
+    end
+  end
+
+  defp build_relationship_lists(objects) do
+    # For each object, follow the sibling/next chains to build children/contents lists
+    Enum.into(objects, %{}, fn {id, obj} ->
+      {id,
+       %{
+         obj
+         | children: collect_chain(objects, obj.first_child_id, :sibling_id),
+           contents: collect_chain(objects, obj.first_content_id, :next_id)
+       }}
+    end)
+  end
+
+  defp collect_chain(_objects, -1, _field), do: []
+
+  defp collect_chain(objects, id, field) do
+    case Map.get(objects, id) do
+      nil ->
+        []
+
+      obj ->
+        [id | collect_chain(objects, Map.get(obj, field), field)]
+    end
+  end
+
+  defp resolve_all_properties(objects) do
+    # For each object, inherited values are stored as a list in temp_inherited_values.
+    # We need to map them to actual property names from ancestors.
+    Enum.into(objects, %{}, fn {id, obj} ->
+      {id, resolve_obj_properties(obj, objects)}
+    end)
+  end
+
+  defp resolve_obj_properties(obj, objects) do
+    # Get inherited names from ancestors
+    inherited_names = get_inherited_property_names(obj.parent, objects)
+
+    # Map inherited values to names
+    overridden =
+      Enum.zip(inherited_names, Map.get(obj, :temp_inherited_values, []) || [])
+      |> Enum.into(%{}, fn {name, {value, owner, perms}} ->
+        {name, %Property{name: name, value: value, owner: owner, perms: perms}}
+      end)
+
+    %{obj | overridden_properties: overridden}
+  end
+
+  defp get_inherited_property_names(-1, _objects), do: []
+
+  defp get_inherited_property_names(parent_id, objects) do
+    case Map.get(objects, parent_id) do
+      nil ->
+        []
+
+      parent ->
+        # Names from ancestors + local names of this parent
+        get_inherited_property_names(parent.parent, objects) ++
+          Enum.map(parent.properties, & &1.name)
     end
   end
 
@@ -58,19 +133,23 @@ defmodule Alchemoo.Database.Parser do
 
   # Parse metadata based on version
   defp parse_metadata(lines, version) when version >= 4 do
-    # Format 4: object_count, verb_count, dummy, user_count, dummy, clocks, queued, suspended
-    # Some databases (JHCore) have 4 extra lines after this
-    with [obj_count | rest] <- lines,
-         {object_count, _} <- Integer.parse(obj_count),
+    # Format 4: 
+    # 1. object_count
+    # 2. verb_count
+    # 3. dummy
+    # 4. user_count
+    # 5. users (user_count lines)
+    
+    with [obj_count_str | rest] <- lines,
+         {object_count, _} <- Integer.parse(obj_count_str),
          [_verb_count | rest] <- rest,
          [_dummy1 | rest] <- rest,
-         [_user_count | rest] <- rest,
-         [_dummy2 | rest] <- rest,
-         [_clocks | rest] <- rest,
-         [_queued | rest] <- rest,
-         [_suspended | rest] <- rest do
-      # Skip any extra metadata lines until we find #0
-      rest = skip_extra_metadata(rest)
+         [user_count_str | rest] <- rest,
+         {user_count, _} <- Integer.parse(user_count_str),
+         rest = Enum.drop(rest, user_count) do # Skip user IDs
+      
+      # Sometimes there's more metadata (numbers) until #0
+      rest = skip_to_first_object(rest)
 
       {:ok, %{object_count: object_count, clock: 0, version: version}, rest}
     else
@@ -79,34 +158,20 @@ defmodule Alchemoo.Database.Parser do
   end
 
   defp parse_metadata(lines, _version) do
-    # Format 1: object_count, clock, then 3 more numbers we skip
-    with [obj_count | rest] <- lines,
-         {object_count, _} <- Integer.parse(obj_count),
-         [clock_str | rest] <- rest,
-         {clock, _} <- Integer.parse(clock_str),
-         # Skip 3 more metadata lines (lines 4-6 in Minimal.db)
-         [_ | rest] <- rest,
-         [_ | rest] <- rest,
-         [_ | rest] <- rest do
-      {:ok, %{object_count: object_count, clock: clock, version: 1}, rest}
+    # Format 1: object_count, clock, then some more metadata
+    with [obj_count_str | rest] <- lines,
+         {object_count, _} <- Integer.parse(obj_count_str) do
+      # Skip until the first object #ID
+      rest = skip_to_first_object(rest)
+      {:ok, %{object_count: object_count, clock: 0, version: 1}, rest}
     else
       _ -> {:error, :invalid_metadata}
     end
   end
 
-  # Skip extra metadata lines (numbers) until we find an object marker
-  defp skip_extra_metadata(["#" <> _ | _] = lines), do: lines
-
-  defp skip_extra_metadata([line | rest]) do
-    case Integer.parse(String.trim(line)) do
-      # It's a number, skip it
-      {_, _} -> skip_extra_metadata(rest)
-      # Not a number, stop
-      :error -> [line | rest]
-    end
-  end
-
-  defp skip_extra_metadata([]), do: []
+  defp skip_to_first_object(["#" <> _ | _] = lines), do: lines
+  defp skip_to_first_object([_ | rest]), do: skip_to_first_object(rest)
+  defp skip_to_first_object([]), do: []
 
   # Parse all objects
   defp parse_objects(lines, metadata) do
@@ -128,7 +193,7 @@ defmodule Alchemoo.Database.Parser do
   # Parse a single object
   defp parse_object(["" | rest], version), do: parse_object(rest, version)
 
-  defp parse_object(["#" <> id_str | rest], _version) do
+  defp parse_object(["#" <> id_str | rest], version) do
     with {:ok, id} <- parse_integer(id_str),
          {:ok, name, rest} <- parse_line(rest),
          # Both Format 1 and Format 4 have an extra line after the name (handles), usually empty
@@ -136,30 +201,36 @@ defmodule Alchemoo.Database.Parser do
          {:ok, flags, rest} <- parse_flags_line(rest),
          {:ok, owner, rest} <- parse_integer_line(rest),
          {:ok, location, rest} <- parse_integer_line(rest),
-         {:ok, contents, rest} <- parse_integer_line(rest),
-         {:ok, next, rest} <- parse_integer_line(rest),
+         {:ok, first_content_id, rest} <- parse_integer_line(rest),
+         {:ok, next_id, rest} <- parse_integer_line(rest),
          {:ok, parent, rest} <- parse_integer_line(rest),
-         {:ok, child, rest} <- parse_integer_line(rest),
-         {:ok, sibling, rest} <- parse_integer_line(rest),
+         {:ok, first_child_id, rest} <- parse_integer_line(rest),
+         {:ok, sibling_id, rest} <- parse_integer_line(rest),
          {:ok, verbs, rest} <- parse_verb_headers(rest),
-         {:ok, properties, rest} <- parse_property_headers(rest) do
+         {:ok, {properties, inherited_values}, rest} <- parse_property_headers(rest) do
       object = %Object{
         id: id,
         name: name,
         flags: flags,
         owner: owner,
         location: location,
-        contents: contents,
-        next: next,
+        first_content_id: first_content_id,
+        next_id: next_id,
         parent: parent,
-        child: child,
-        sibling: sibling,
+        first_child_id: first_child_id,
+        sibling_id: sibling_id,
         verbs: verbs,
         properties: properties
       }
 
+      object = Map.put(object, :temp_inherited_values, inherited_values)
+
       {:ok, object, rest}
     end
+  end
+
+  defp parse_object(lines, _version) do
+    {:error, {:invalid_object_start, Enum.take(lines, 5)}}
   end
 
   # Parse verb headers (name and metadata, code comes later)
@@ -220,8 +291,8 @@ defmodule Alchemoo.Database.Parser do
       {val_count, _} ->
         case parse_property_values(rest, val_count, []) do
           {:ok, values, rest} ->
-            properties = map_property_values(names, values, count, val_count)
-            {:ok, properties, rest}
+            {properties, inherited} = map_property_values(names, values, count, val_count)
+            {:ok, {properties, inherited}, rest}
 
           {:error, reason} ->
             {:error, reason}
@@ -235,22 +306,25 @@ defmodule Alchemoo.Database.Parser do
   defp process_property_values([], _names, _count), do: {:error, :unexpected_eof}
 
   defp map_property_values(names, values, count, val_count) do
-    # Local properties are at the end of the combined value list
-    local_values =
-      case val_count >= count do
-        true -> Enum.slice(values, (val_count - count)..-1//1)
-        false -> values ++ List.duplicate({Value.num(0), 0, 0}, count - val_count)
-      end
+    # Inherited properties are at the beginning
+    num_inherited = max(0, val_count - count)
+    inherited_values = Enum.take(values, num_inherited)
 
-    Enum.zip(names, local_values)
-    |> Enum.map(fn {name, {value, owner, perms}} ->
-      %Property{
-        name: name,
-        value: value,
-        owner: owner,
-        perms: perms
-      }
-    end)
+    # Local properties are at the end
+    local_values = Enum.drop(values, num_inherited)
+
+    properties =
+      Enum.zip(names, local_values)
+      |> Enum.map(fn {name, {value, owner, perms}} ->
+        %Property{
+          name: name,
+          value: value,
+          owner: owner,
+          perms: Integer.to_string(perms)
+        }
+      end)
+
+    {properties, inherited_values}
   end
 
   defp parse_property_names(lines, 0, acc), do: {:ok, Enum.reverse(acc), lines}
@@ -271,14 +345,8 @@ defmodule Alchemoo.Database.Parser do
           _ -> {:error, {:invalid_property_metadata, owner_str, perms_str}}
         end
 
-      {:ok, _, _} ->
+      _ ->
         {:error, :unexpected_eof_in_property_values}
-
-      {:error, reason} ->
-        {:error, reason}
-
-      [] ->
-        {:error, :unexpected_eof}
     end
   end
 
@@ -286,8 +354,21 @@ defmodule Alchemoo.Database.Parser do
 
   defp parse_value([type_str | rest]) do
     case Integer.parse(String.trim(type_str)) do
-      {type_code, _} -> dispatch_value(type_code, rest, type_str)
-      :error -> {:error, {:invalid_type_code, type_str}}
+      {type_code, _} ->
+        # Modern MOO uses 0x20 bit for 'shared' flag
+        base_type = band(type_code, 0x1F)
+        
+        # Check for shared flag (0x20)
+        if band(type_code, 0x20) != 0 do
+          # Shared value: read one integer ID and treat as numerical value for now
+          [id_str | next_rest] = rest
+          {:ok, Value.num(String.to_integer(String.trim(id_str))), next_rest}
+        else
+          dispatch_value(base_type, rest, type_str)
+        end
+
+      :error ->
+        {:error, {:invalid_type_code, type_str}}
     end
   end
 

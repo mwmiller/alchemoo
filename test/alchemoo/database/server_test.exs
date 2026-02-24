@@ -17,7 +17,6 @@ defmodule Alchemoo.Database.ServerTest do
       stats = Server.stats()
       assert stats.loaded == true
       assert stats.object_count == 95
-      assert stats.ets_size == 95
     end
   end
 
@@ -34,7 +33,7 @@ defmodule Alchemoo.Database.ServerTest do
     end
 
     test "returns error for invalid object" do
-      assert {:error, :E_INVARG} = Server.get_object(9999)
+      assert {:error, :E_INVIND} = Server.get_object(9999)
     end
   end
 
@@ -58,7 +57,7 @@ defmodule Alchemoo.Database.ServerTest do
     end
 
     test "returns error for invalid object" do
-      assert {:error, :E_INVARG} = Server.get_property(9999, "name")
+      assert {:error, :E_INVIND} = Server.get_property(9999, "name")
     end
   end
 

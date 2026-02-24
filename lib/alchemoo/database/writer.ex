@@ -1,123 +1,136 @@
 defmodule Alchemoo.Database.Writer do
   @moduledoc """
-  Writes MOO databases in LambdaMOO format for sharing and compatibility.
+  Serializes the database back to MOO format.
   """
+  alias Alchemoo.Database
+  alias Alchemoo.Database.Object
+  alias Alchemoo.Value
 
-  @doc """
-  Write database to MOO format (Format 4).
-  """
-  def write_moo(db, path) do
+  def write_moo(%Database{} = db, path) do
     content = serialize_moo(db)
     File.write(path, content)
   end
 
-  @doc """
-  Serialize database to MOO format string.
-  """
-  def serialize_moo(db) do
-    [
+  def serialize_moo(%Database{} = db) do
+    header = [
       "** LambdaMOO Database, Format Version 4 **",
       "** Exported by Alchemoo **",
-      "",
-      "#{map_size(db.objects)}",
-      # clocks (unused)
+      "#{map_size(db.objects)} objects",
+      "#{count_all_verbs(db)} verbs",
       "0",
-      "",
-      serialize_objects(db.objects),
-      # verb programs (we inline them)
-      "0",
-      # users (unused)
-      "0",
-      ""
+      "#{count_players(db)} users"
     ]
-    |> Enum.join("\n")
+
+    # Add player list
+    player_list = get_player_list(db)
+
+    # Add objects
+    objects =
+      db.objects
+      |> Map.values()
+      |> Enum.sort_by(& &1.id)
+      |> Enum.map_join("\n", &serialize_object/1)
+
+    Enum.join(header ++ player_list, "\n") <> "\n" <> objects
   end
 
-  defp serialize_objects(objects) do
-    objects
-    |> Enum.sort_by(fn {id, _} -> id end)
-    |> Enum.map_join("\n", fn {_id, obj} -> serialize_object(obj) end)
+  defp count_all_verbs(db) do
+    db.objects |> Map.values() |> Enum.map(&length(&1.verbs)) |> Enum.sum()
   end
 
-  defp serialize_object(obj) do
-    [
+  defp count_players(db) do
+    db.objects |> Map.values() |> Enum.count(&is_player?/1)
+  end
+
+  defp get_player_list(db) do
+    db.objects
+    |> Map.values()
+    |> Enum.filter(&is_player?/1)
+    |> Enum.map(&"##{&1.id}")
+  end
+
+  defp is_player?(obj) do
+    Alchemoo.Database.Flags.set?(obj.flags, Alchemoo.Database.Flags.user())
+  end
+
+  defp serialize_object(%Object{} = obj) do
+    header = [
       "##{obj.id}",
       obj.name,
-      # old handles (unused)
-      "",
-      # flags
-      "0",
+      "", # handles
+      "#{obj.flags}",
       "#{obj.owner}",
       "#{obj.location}",
-      "#{obj.contents}",
-      "#{obj.next}",
+      "#{obj.first_content_id}",
+      "#{obj.next_id}",
       "#{obj.parent}",
-      "#{obj.child}",
-      "#{obj.sibling}",
-      "#{length(obj.verbs)}",
-      serialize_verbs(obj.verbs),
-      "#{length(obj.properties)}",
-      serialize_properties(obj.properties)
+      "#{obj.first_child_id}",
+      "#{obj.sibling_id}"
     ]
-    |> Enum.join("\n")
-  end
 
-  defp serialize_verbs(verbs) do
-    Enum.map_join(verbs, "\n", &serialize_verb/1)
+    verbs_header = ["#{length(obj.verbs)}"]
+    verbs = Enum.map(obj.verbs, &serialize_verb/1)
+
+    props_header = ["#{length(obj.properties)}"]
+    prop_names = Enum.map(obj.properties, & &1.name)
+    prop_values = Enum.map(obj.properties, &serialize_property/1)
+
+    Enum.join(header ++ verbs_header ++ verbs ++ props_header ++ prop_names ++ prop_values, "\n")
   end
 
   defp serialize_verb(verb) do
     [
       verb.name,
       "#{verb.owner}",
-      verb.perms,
+      "#{verb.perms}",
       "#{verb.prep}",
-      serialize_verb_code(verb.code)
+      serialize_code(verb.code)
     ]
     |> Enum.join("\n")
   end
 
-  defp serialize_verb_code(code) do
-    [
-      "#{length(code)}",
-      Enum.join(code, "\n")
-    ]
-    |> Enum.join("\n")
-  end
-
-  defp serialize_properties(properties) do
-    Enum.map_join(properties, "\n", &serialize_property/1)
+  defp serialize_code(code) do
+    Enum.join(code, "\n") <> "\n."
   end
 
   defp serialize_property(prop) do
     [
-      prop.name,
       serialize_value(prop.value),
       "#{prop.owner}",
-      prop.perms
+      "#{prop.perms}"
     ]
     |> Enum.join("\n")
   end
 
-  # Clear property
-  defp serialize_value(nil), do: "0"
-  defp serialize_value(:clear), do: "5"
-  defp serialize_value(:none), do: "6"
-  defp serialize_value({:num, n}), do: "#{n}"
-  defp serialize_value({:obj, n}), do: "##{n}"
-  defp serialize_value({:str, s}), do: "\"#{escape_string(s)}\""
-  defp serialize_value({:err, err}), do: "E_#{err}"
-
-  defp serialize_value({:list, items}) do
-    "{" <> Enum.map_join(items, ", ", &serialize_value/1) <> "}"
+  defp serialize_value(val) do
+    case val do
+      {:num, n} -> "0\n#{n}"
+      {:obj, n} -> "1\n#{n}"
+      {:str, s} -> "2\n#{s}"
+      {:err, e} -> "3\n#{error_to_code(e)}"
+      {:list, items} -> "4\n#{length(items)}\n#{Enum.map_join(items, "\n", &serialize_value/1)}"
+      :clear -> "0\n0" # Should not happen in export
+    end
   end
 
-  defp escape_string(s) do
-    s
-    |> String.replace("\\", "\\\\")
-    |> String.replace("\"", "\\\"")
-    |> String.replace("\n", "\\n")
-    |> String.replace("\r", "\\r")
-    |> String.replace("\t", "\\t")
+  defp error_to_code(e) do
+    case e do
+      :E_NONE -> 0
+      :E_TYPE -> 1
+      :E_DIV -> 2
+      :E_PERM -> 3
+      :E_PROPNF -> 4
+      :E_VERBNF -> 5
+      :E_VARNF -> 6
+      :E_INVIND -> 7
+      :E_RECMOVE -> 8
+      :E_MAXREC -> 9
+      :E_RANGE -> 10
+      :E_ARGS -> 11
+      :E_NACC -> 12
+      :E_INVARG -> 13
+      :E_QUOTA -> 14
+      :E_FLOAT -> 15
+    end
   end
 end
