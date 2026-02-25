@@ -3,7 +3,7 @@ Mix.install([{:alchemoo, path: "."}])
 IO.puts("🚀 Alchemoo Verb Execution Demo\n")
 
 # Load database
-{:ok, db} = Alchemoo.Database.Parser.parse_file("/tmp/LambdaCore-12Apr99.db")
+{:ok, db} = Alchemoo.Database.Parser.parse_file("tmp/LambdaCore-12Apr99.db")
 
 IO.puts("✓ Loaded LambdaCore")
 IO.puts("  Objects: #{map_size(db.objects)}")

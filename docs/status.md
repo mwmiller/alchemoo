@@ -3,11 +3,10 @@
 ## ✅ Completed Features
 
 ### Database Parser (100%)
-- **Format Support**: Format 1 and Format 4 (with variants)
+- **Format Support**: Format 4 (Standard LambdaMOO). Note: Versions older than Format 4 (as used by LambdaCore) are not a priority.
 - **Databases Tested**:
   - LambdaCore: 95 objects, 1,699 verbs (99.9% code coverage)
   - JHCore: 236 objects, 2,722 verbs (100% code coverage)
-  - Minimal.db: 4 objects (Format 1)
 - **Capabilities**:
   - Object structure parsing
   - Verb code extraction

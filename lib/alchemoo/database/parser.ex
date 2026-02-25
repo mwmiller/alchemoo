@@ -1,12 +1,14 @@
 defmodule Alchemoo.Database.Parser do
   @moduledoc """
-  Parses LambdaMOO database files (Format Versions 1-4).
+  Parses LambdaMOO database files (prioritizing Format Version 4).
 
   The database format consists of:
   1. Header with version and metadata
   2. Object definitions (structure, verb names, property names)
   3. Verb code sections (#objnum:verbnum)
   4. Footer with clocks and queued tasks
+
+  Note: Versions older than Format 4 (as used by LambdaCore) are not a priority.
   """
   require Logger
   import Bitwise
@@ -140,9 +142,9 @@ defmodule Alchemoo.Database.Parser do
          [_verb_count | rest] <- rest,
          [_dummy1 | rest] <- rest,
          [user_count_str | rest] <- rest,
-         {user_count, _} <- Integer.parse(user_count_str),
-         # Skip user IDs
-         rest = Enum.drop(rest, user_count) do
+         {user_count, _} <- Integer.parse(user_count_str) do
+      # Skip user IDs
+      rest = Enum.drop(rest, user_count)
       # Sometimes there's more metadata (numbers) until #0
       rest = skip_to_first_object(rest)
 
@@ -152,16 +154,8 @@ defmodule Alchemoo.Database.Parser do
     end
   end
 
-  defp parse_metadata(lines, _version) do
-    # Format 1: object_count, clock, then some more metadata
-    with [obj_count_str | rest] <- lines,
-         {object_count, _} <- Integer.parse(obj_count_str) do
-      # Skip until the first object #ID
-      rest = skip_to_first_object(rest)
-      {:ok, %{object_count: object_count, clock: 0, version: 1}, rest}
-    else
-      _ -> {:error, :invalid_metadata}
-    end
+  defp parse_metadata(_lines, version) do
+    {:error, {:unsupported_version, version}}
   end
 
   defp skip_to_first_object(["#" <> _ | _] = lines), do: lines
@@ -188,9 +182,7 @@ defmodule Alchemoo.Database.Parser do
   # Parse a single object
   defp parse_object(["" | rest], version), do: parse_object(rest, version)
 
-  # PONDER: Why is the version unused here?
-  # Are there any differences in object structure between versions that we need to handle?
-  defp parse_object(["#" <> id_str | rest], _version) do
+  defp parse_object(["#" <> id_str | rest], version) do
     with {:ok, id} <- parse_integer(id_str),
          {:ok, name, rest} <- parse_line(rest),
          # Both Format 1 and Format 4 have an extra line after the name (handles), usually empty
@@ -204,7 +196,7 @@ defmodule Alchemoo.Database.Parser do
          {:ok, first_child_id, rest} <- parse_integer_line(rest),
          {:ok, sibling_id, rest} <- parse_integer_line(rest),
          {:ok, verbs, rest} <- parse_verb_headers(rest),
-         {:ok, {properties, inherited_values}, rest} <- parse_property_headers(rest) do
+         {:ok, {properties, inherited_values}, rest} <- parse_property_headers(rest, version) do
       object = %Object{
         id: id,
         name: name,
@@ -272,18 +264,18 @@ defmodule Alchemoo.Database.Parser do
     {:error, {:invalid_verb_header, lines}}
   end
 
-  defp parse_property_headers([count_line | rest]) do
+  defp parse_property_headers([count_line | rest], version) do
     case Integer.parse(String.trim(count_line)) do
       {count, _} ->
         {:ok, names, rest} = parse_property_names(rest, count, [])
-        process_property_values(rest, names, count)
+        process_property_values(rest, names, count, version)
 
       :error ->
         {:error, {:invalid_property_count, count_line}}
     end
   end
 
-  defp process_property_values([val_count_line | rest], names, count) do
+  defp process_property_values([val_count_line | rest], names, count, _version) do
     case Integer.parse(String.trim(val_count_line)) do
       {val_count, _} ->
         case parse_property_values(rest, val_count, []) do
@@ -299,8 +291,6 @@ defmodule Alchemoo.Database.Parser do
         {:error, {:invalid_property_value_count, val_count_line}}
     end
   end
-
-  defp process_property_values([], _names, _count), do: {:error, :unexpected_eof}
 
   defp map_property_values(names, values, count, val_count) do
     # Inherited properties are at the beginning

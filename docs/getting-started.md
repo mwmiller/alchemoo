@@ -31,7 +31,7 @@ LambdaCore is the classic MOO database, perfect for learning:
 
 ```bash
 # Download LambdaCore
-curl -o /tmp/LambdaCore-12Apr99.db \
+curl -o tmp/LambdaCore-12Apr99.db \
   https://github.com/SevenEcks/LambdaMOO/raw/master/LambdaCore-12Apr99.db
 ```
 
@@ -41,7 +41,7 @@ JHCore is a more modern MOO database with additional features:
 
 ```bash
 # Download JHCore
-curl -o /tmp/JHCore-DEV-2.db \
+curl -o tmp/JHCore-DEV-2.db \
   https://github.com/SevenEcks/lambda-moo-programming/raw/master/databases/JHCore-DEV-2.db
 ```
 
@@ -133,8 +133,9 @@ Alchemoo uses sensible defaults, but you can customize:
 
 ```elixir
 # config/config.exs
+config :alchemoo, :base_dir, "tmp"
+
 config :alchemoo, :checkpoint,
-  dir: "/tmp/alchemoo/checkpoints",
   interval: 300_000,  # 5 minutes
   keep_last: 5
 ```
@@ -218,10 +219,10 @@ Make sure your database file is in the correct location:
 
 ```bash
 # Check if file exists
-ls -lh /tmp/*.db
+ls -lh tmp/*.db
 
 # Check file format
-head -1 /tmp/LambdaCore-12Apr99.db
+head -1 tmp/LambdaCore-12Apr99.db
 # Should show: ** LambdaMOO Database, Format Version 4 **
 ```
 

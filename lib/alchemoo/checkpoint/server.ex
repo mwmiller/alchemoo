@@ -32,14 +32,14 @@ defmodule Alchemoo.Checkpoint.Server do
   alias Alchemoo.Database.Writer
 
   # CONFIG: Should be extracted to config
+  # CONFIG: :alchemoo, :base_dir
+  @default_base_dir "tmp"
   # CONFIG: :alchemoo, :checkpoint, :dir
-  @default_checkpoint_dir "/tmp/alchemoo/checkpoints"
+  @default_checkpoint_dir "checkpoints"
   # 307 seconds (prime) # CONFIG: :alchemoo, :checkpoint, :interval
   @default_interval 307_000
   # CONFIG: :alchemoo, :checkpoint, :keep_last
   @default_keep_last 10
-  # CONFIG: :alchemoo, :checkpoint, :load_on_startup
-  @default_load_on_startup :latest
   # CONFIG: :alchemoo, :checkpoint, :checkpoint_on_shutdown
   @checkpoint_on_shutdown true
   # CONFIG: :alchemoo, :checkpoint, :moo_export_interval (every Nth checkpoint)
@@ -91,35 +91,59 @@ defmodule Alchemoo.Checkpoint.Server do
 
   @impl true
   def init(opts) do
-    checkpoint_dir = Keyword.get(opts, :checkpoint_dir, @default_checkpoint_dir)
-    interval = Keyword.get(opts, :interval, @default_interval)
-    keep_last = Keyword.get(opts, :keep_last, @default_keep_last)
-    _load_on_startup = Keyword.get(opts, :load_on_startup, @default_load_on_startup)
-    moo_export_interval = Keyword.get(opts, :moo_export_interval, @moo_export_interval)
-    moo_name = Keyword.get(opts, :moo_name, @moo_name)
-    keep_last_moo_exports = Keyword.get(opts, :keep_last_moo_exports, @keep_last_moo_exports)
+    state = build_initial_state(opts)
 
     # Ensure checkpoint directory exists
-    File.mkdir_p!(checkpoint_dir)
-
-    state = %__MODULE__{
-      checkpoint_dir: checkpoint_dir,
-      interval: interval,
-      keep_last: keep_last,
-      moo_export_interval: moo_export_interval,
-      moo_name: moo_name,
-      keep_last_moo_exports: keep_last_moo_exports
-    }
+    File.mkdir_p!(state.checkpoint_dir)
 
     # Schedule first checkpoint
-    timer_ref = schedule_checkpoint(interval)
+    timer_ref = schedule_checkpoint(state.interval)
     state = %{state | timer_ref: timer_ref}
 
     Logger.info(
-      "Checkpoint server started (dir: #{checkpoint_dir}, interval: #{interval}ms, MOO export every #{moo_export_interval} checkpoints)"
+      "Checkpoint server started (dir: #{state.checkpoint_dir}, interval: #{state.interval}ms, MOO export every #{state.moo_export_interval} checkpoints)"
     )
 
     {:ok, state}
+  end
+
+  defp build_initial_state(opts) do
+    config = Application.get_env(:alchemoo, :checkpoint, [])
+    base_dir = Application.get_env(:alchemoo, :base_dir, @default_base_dir)
+
+    %__MODULE__{
+      checkpoint_dir:
+        fetch_config(
+          opts,
+          config,
+          :checkpoint_dir,
+          :dir,
+          Path.join(base_dir, @default_checkpoint_dir)
+        ),
+      interval: fetch_config(opts, config, :interval, :interval, @default_interval),
+      keep_last: fetch_config(opts, config, :keep_last, :keep_last, @default_keep_last),
+      moo_export_interval:
+        fetch_config(
+          opts,
+          config,
+          :moo_export_interval,
+          :moo_export_interval,
+          @moo_export_interval
+        ),
+      moo_name: opts[:moo_name] || Application.get_env(:alchemoo, :moo_name) || @moo_name,
+      keep_last_moo_exports:
+        fetch_config(
+          opts,
+          config,
+          :keep_last_moo_exports,
+          :keep_last_moo_exports,
+          @keep_last_moo_exports
+        )
+    }
+  end
+
+  defp fetch_config(opts, config, key, config_key, default) do
+    opts[key] || config[config_key] || default
   end
 
   @impl true

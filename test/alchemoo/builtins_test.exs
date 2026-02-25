@@ -3,6 +3,42 @@ defmodule Alchemoo.BuiltinsTest do
   alias Alchemoo.Builtins
   alias Alchemoo.Value
 
+  setup do
+    # Ensure #0 exists and has some baseline verbs/properties for tests
+    obj = Value.obj(0)
+    verb = Value.str("do_login_command")
+
+    case Builtins.call(:verb_info, [obj, verb]) do
+      {:err, :E_VERBNF} ->
+        Builtins.call(:add_verb, [
+          obj,
+          Value.list([Value.obj(2), Value.str("rx"), verb]),
+          Value.list([Value.str("none"), Value.str("none"), Value.str("none")])
+        ])
+
+      _ ->
+        :ok
+    end
+
+    # Add builder property to #0 if it doesn't exist
+    prop = Value.str("builder")
+
+    case Builtins.call(:property_info, [obj, prop]) do
+      {:err, :E_PROPNF} ->
+        Builtins.call(:add_property, [
+          obj,
+          prop,
+          Value.num(0),
+          Value.list([Value.obj(2), Value.str("r")])
+        ])
+
+      _ ->
+        :ok
+    end
+
+    :ok
+  end
+
   test "typeof returns correct type codes" do
     assert Builtins.call(:typeof, [Value.num(42)]) == Value.num(0)
     assert Builtins.call(:typeof, [Value.obj(1)]) == Value.num(1)
@@ -237,11 +273,12 @@ defmodule Alchemoo.BuiltinsTest do
   test "is_player checks USER flag" do
     # Find a player in the DB
     {:list, players} = Builtins.call(:players, [])
+
     if !Enum.empty?(players) do
       [{:obj, player_id} | _] = players
       assert Builtins.call(:is_player, [Value.obj(player_id)]) == Value.num(1)
     end
-    
+
     # Object #1 is system object in some cores, usually NOT a player
     assert Builtins.call(:is_player, [Value.obj(1)]) == Value.num(0)
   end
@@ -249,7 +286,7 @@ defmodule Alchemoo.BuiltinsTest do
   test "players returns list of all players" do
     {:list, players} = Builtins.call(:players, [])
     assert is_list(players)
-    
+
     # In a populated DB there should be players
     if !Enum.empty?(players) do
       [{:obj, player_id} | _] = players
@@ -359,7 +396,7 @@ defmodule Alchemoo.BuiltinsTest do
     # set_task_perms
     assert Builtins.call(:set_task_perms, [Value.obj(100)]) == Value.num(1)
     assert Builtins.call(:player, []) == Value.obj(100)
-    
+
     # callers() - empty initially
     assert Builtins.call(:callers, []) == Value.list([])
 
@@ -376,12 +413,14 @@ defmodule Alchemoo.BuiltinsTest do
     })
 
     {:list, [caller_info]} = Builtins.call(:callers, [])
-    assert caller_info == Value.list([
-      Value.obj(0),
-      Value.str("test"),
-      Value.obj(2),
-      Value.obj(2)
-    ])
+
+    assert caller_info ==
+             Value.list([
+               Value.obj(0),
+               Value.str("test"),
+               Value.obj(2),
+               Value.obj(2)
+             ])
 
     {:list, [{:num, 1}, {:list, stack}]} = Builtins.call(:eval, [Value.str("return callers();")])
     assert length(stack) == 1
@@ -444,17 +483,21 @@ defmodule Alchemoo.BuiltinsTest do
     assert seconds > 0
 
     # force_input - invalid player
-    assert Builtins.call(:force_input, [Value.obj(999), Value.str("test")]) == Value.err(:E_INVARG)
+    assert Builtins.call(:force_input, [Value.obj(999), Value.str("test")]) ==
+             Value.err(:E_INVARG)
 
     # read_binary
-    assert Builtins.call(:read_binary, [Value.str("foo")]) in [Value.err(:E_PERM), Value.err(:E_INVARG)]
+    assert Builtins.call(:read_binary, [Value.str("foo")]) in [
+             Value.err(:E_PERM),
+             Value.err(:E_INVARG)
+           ]
   end
 
   test "introspection built-ins" do
     # function_info
     {:list, info} = Builtins.call(:function_info, [Value.str("tostr")])
     assert length(info) == 3
-    
+
     # disassemble (mocked as source code return)
     # Use object #0 and a known verb if possible, or expect error/empty
     # Assuming object #0 exists
@@ -466,6 +509,8 @@ defmodule Alchemoo.BuiltinsTest do
     # listen/unlisten currently return E_PERM
     assert Builtins.call(:listen, [Value.obj(0), Value.num(8080)]) == Value.err(:E_PERM)
     assert Builtins.call(:unlisten, [Value.num(8080)]) == Value.err(:E_PERM)
-    assert Builtins.call(:open_network_connection, [Value.str("google.com"), Value.num(80)]) == Value.err(:E_PERM)
+
+    assert Builtins.call(:open_network_connection, [Value.str("google.com"), Value.num(80)]) ==
+             Value.err(:E_PERM)
   end
 end

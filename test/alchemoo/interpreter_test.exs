@@ -6,7 +6,11 @@ defmodule Alchemoo.InterpreterTest do
 
   defp eval(code) do
     {:ok, ast, _} = Expression.parse(code)
-    Interpreter.eval(ast)
+
+    case Interpreter.eval(ast) do
+      {:ok, val, _env} -> {:ok, val}
+      error -> error
+    end
   end
 
   test "evaluates number literals" do
@@ -41,12 +45,12 @@ defmodule Alchemoo.InterpreterTest do
   end
 
   test "evaluates list literals" do
-    {:ok, result} = eval("{1, 2, 3}")
+    assert {:ok, result} = eval("{1, 2, 3}")
     assert result == Value.list([Value.num(1), Value.num(2), Value.num(3)])
   end
 
   test "evaluates empty list" do
-    {:ok, result} = eval("{}")
+    assert {:ok, result} = eval("{}")
     assert result == Value.list([])
   end
 
@@ -57,7 +61,11 @@ defmodule Alchemoo.InterpreterTest do
   test "evaluates with variables" do
     {:ok, ast, _} = Expression.parse("x + 10")
     env = %{"x" => Value.num(5)}
-    assert Interpreter.eval(ast, env) == {:ok, Value.num(15)}
+
+    case Interpreter.eval(ast, env) do
+      {:ok, val, _env} -> assert val == Value.num(15)
+      error -> flunk("Expected {:ok, Value.num(15), ...}, got #{inspect(error)}")
+    end
   end
 
   test "handles undefined variables" do

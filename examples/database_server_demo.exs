@@ -14,7 +14,7 @@ IO.puts("✓ Database Server started\n")
 
 # Load database
 IO.puts("Loading LambdaCore database...")
-{:ok, count} = Server.load("/tmp/LambdaCore-12Apr99.db")
+{:ok, count} = Server.load("tmp/LambdaCore-12Apr99.db")
 IO.puts("✓ Loaded #{count} objects\n")
 
 # Get stats

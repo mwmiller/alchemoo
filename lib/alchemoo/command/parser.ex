@@ -51,7 +51,7 @@ defmodule Alchemoo.Command.Parser do
   """
   def find_verb_target(parsed, player_id, _db) do
     # For now, just try the player
-    # TODO: Implement full search order
+    # FUTURE: Implement full search order
     {:ok, player_id, parsed.verb}
   end
 end

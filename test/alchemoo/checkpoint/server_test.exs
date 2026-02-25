@@ -4,7 +4,7 @@ defmodule Alchemoo.Checkpoint.ServerTest do
   alias Alchemoo.Checkpoint.Server, as: Checkpoint
   alias Alchemoo.Database.Server, as: DB
 
-  @test_dir "/tmp/alchemoo_test_checkpoints"
+  @test_dir "tmp/checkpoints"
 
   setup do
     # Clean test directory
@@ -21,7 +21,7 @@ defmodule Alchemoo.Checkpoint.ServerTest do
   describe "checkpoint/0" do
     test "creates checkpoint file" do
       # Load a database first
-      DB.load("/tmp/LambdaCore-12Apr99.db")
+      DB.load("test/fixtures/lambdacore.db")
 
       # Create checkpoint
       assert {:ok, filename} = Checkpoint.checkpoint()
@@ -37,7 +37,7 @@ defmodule Alchemoo.Checkpoint.ServerTest do
 
   describe "list_checkpoints/0" do
     test "lists available checkpoints" do
-      DB.load("/tmp/LambdaCore-12Apr99.db")
+      DB.load("test/fixtures/lambdacore.db")
 
       # Create a few checkpoints
       {:ok, _} = Checkpoint.checkpoint()
@@ -65,7 +65,7 @@ defmodule Alchemoo.Checkpoint.ServerTest do
   describe "export_moo/1" do
     test "exports database to MOO format" do
       # Load a database
-      DB.load("/tmp/LambdaCore-12Apr99.db")
+      DB.load("test/fixtures/lambdacore.db")
 
       # Export to MOO format
       export_path = Path.join(@test_dir, "export.db")

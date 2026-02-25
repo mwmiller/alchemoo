@@ -14,7 +14,7 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 ## What Works
 
 ### Core Infrastructure (100%)
-- ✅ Database parser (Format 1 & 4)
+- ✅ Database parser (Format 4+)
 - ✅ MOO language parser and interpreter
 - ✅ Database server with ETS storage
 - ✅ Task system with tick quotas and process isolation

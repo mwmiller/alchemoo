@@ -3,7 +3,7 @@ defmodule Alchemoo.Database.JHCoreTest do
   alias Alchemoo.Database.Parser
 
   test "parses JHCore Format 4" do
-    {:ok, db} = Parser.parse_file("/tmp/JHCore-DEV-2.db")
+    {:ok, db} = Parser.parse_file("test/fixtures/jhcore.db")
 
     assert db.version == 4
     assert db.object_count == 237
@@ -16,7 +16,7 @@ defmodule Alchemoo.Database.JHCoreTest do
   end
 
   test "parses JHCore verb code" do
-    {:ok, db} = Parser.parse_file("/tmp/JHCore-DEV-2.db")
+    {:ok, db} = Parser.parse_file("test/fixtures/jhcore.db")
 
     # Count verbs with code
     verbs_with_code =

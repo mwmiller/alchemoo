@@ -32,7 +32,7 @@ defmodule Alchemoo.Auth do
     case Resolver.match(name, all_players) do
       {:ok, player_id} ->
         # 3. Verify password using check_password built-in logic
-        case Builtins.call(:check_password, [Value.obj(player_id), Value.str(password)], %{}) do
+        case Builtins.call(:check_password, [Value.obj(player_id), Value.str(password)]) do
           {:num, 1} ->
             {:ok, player_id}
 
@@ -59,7 +59,7 @@ defmodule Alchemoo.Auth do
         # name is a built-in property, so set_property works
         DB.set_property(player_id, "name", Value.str(name))
 
-        hash = Builtins.call(:crypt, [Value.str(password)], %{})
+        hash = Builtins.call(:crypt, [Value.str(password)])
         # password is not built-in, so must be added
         DB.add_property(player_id, "password", hash, player_id, "")
 

@@ -43,7 +43,10 @@ defmodule Alchemoo.Parser.MOOSimpleTest do
 
   test "parses assignment" do
     {:ok, ast} = MOOSimple.parse("x = 42;")
-    assert %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Assignment{target: %AST.Var{name: "x"}}}]} = ast
+
+    assert %AST.Block{
+             statements: [%AST.ExprStmt{expr: %AST.Assignment{target: %AST.Var{name: "x"}}}]
+           } = ast
   end
 
   test "parses and executes simple verb" do
@@ -60,8 +63,7 @@ defmodule Alchemoo.Parser.MOOSimpleTest do
       try do
         Enum.reduce(stmts, %{}, fn stmt, env ->
           case Interpreter.eval(stmt, env) do
-            {:ok, _, new_env} -> new_env
-            {:ok, _val} -> env
+            {:ok, _val, new_env} -> new_env
             {:error, _} -> env
           end
         end)

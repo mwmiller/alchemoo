@@ -1,13 +1,16 @@
 defmodule Alchemoo.Database.ResolverTest do
   use ExUnit.Case, async: false
   alias Alchemoo.Database.Resolver
+  alias Alchemoo.Database.Server, as: DB
 
   setup do
     # Load LambdaCore for testing resolver
-    path = "/tmp/LambdaCore-12Apr99.db"
+    path = "test/fixtures/lambdacore.db"
+
     if File.exists?(path) do
-      Alchemoo.Database.Server.load(path)
+      DB.load(path)
     end
+
     :ok
   end
 

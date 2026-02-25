@@ -48,7 +48,7 @@ IO.puts("DATABASE INTEGRATION")
 IO.puts(String.duplicate("=", 60))
 
 # Load a database
-case Alchemoo.Database.Parser.parse_file("/tmp/LambdaCore-12Apr99.db") do
+case Alchemoo.Database.Parser.parse_file("tmp/LambdaCore-12Apr99.db") do
   {:ok, db} ->
     runtime = Runtime.new(db)
     

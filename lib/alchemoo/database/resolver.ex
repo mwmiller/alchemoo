@@ -2,6 +2,7 @@ defmodule Alchemoo.Database.Resolver do
   @moduledoc """
   Resolves object names and aliases to object IDs.
   """
+  alias Alchemoo.Database.Flags
   alias Alchemoo.Database.Server, as: DB
 
   @doc """
@@ -67,6 +68,32 @@ defmodule Alchemoo.Database.Resolver do
     end
   end
 
+  @doc """
+  List all symbolic aliases defined on object #0.
+  """
+  def list_aliases do
+    case DB.get_object(0) do
+      {:ok, obj} ->
+        # Core aliases are properties on #0 that have object values
+        aliases = Enum.reduce(obj.properties, %{}, &extract_obj_prop/2)
+
+        # Also include overridden properties if any
+        Enum.reduce(obj.overridden_properties, aliases, fn {name, prop}, acc ->
+          extract_obj_prop(%{name: name, value: prop.value}, acc)
+        end)
+
+      _ ->
+        %{}
+    end
+  end
+
+  defp extract_obj_prop(prop, acc) do
+    case prop.value do
+      {:obj, id} -> Map.put(acc, prop.name, id)
+      _ -> acc
+    end
+  end
+
   defp resolve_id("#" <> id_str) do
     case Integer.parse(id_str) do
       {id, ""} -> {:ok, id}
@@ -76,42 +103,40 @@ defmodule Alchemoo.Database.Resolver do
 
   defp search_candidates(name, ids) do
     Enum.find_value(ids, {:error, :not_found}, fn id ->
-      case DB.get_object(id) do
-        {:ok, obj} ->
-          if matches_object?(obj, name), do: {:ok, id}, else: nil
-
-        _ ->
-          nil
+      with {:ok, obj} <- DB.get_object(id),
+           true <- matches_object?(obj, name) do
+        {:ok, id}
+      else
+        _ -> nil
       end
     end)
   end
 
   defp matches_object?(obj, name) do
-    # Check name (case-insensitive)
     lower_name = String.downcase(name)
 
-    # In MOO, the "name" property is the definitive name
-    # We should check it first, falling back to the structural name
     actual_name =
       case DB.get_property(obj.id, "name") do
         {:ok, {:str, n}} -> n
         _ -> obj.name
       end
 
-    if String.downcase(actual_name) == lower_name do
-      true
-    else
-      # Check aliases (if any)
-      case DB.get_property(obj.id, "aliases") do
-        {:ok, {:list, aliases}} ->
-          Enum.any?(aliases, fn
-            {:str, a} -> String.downcase(a) == lower_name
-            _ -> false
-          end)
+    case String.downcase(actual_name) == lower_name do
+      true -> true
+      false -> matches_aliases?(obj, lower_name)
+    end
+  end
 
-        _ ->
-          false
-      end
+  defp matches_aliases?(obj, lower_name) do
+    case DB.get_property(obj.id, "aliases") do
+      {:ok, {:list, aliases}} ->
+        Enum.any?(aliases, fn
+          {:str, a} -> String.downcase(a) == lower_name
+          _ -> false
+        end)
+
+      _ ->
+        false
     end
   end
 
@@ -120,7 +145,7 @@ defmodule Alchemoo.Database.Resolver do
     DB.get_snapshot().objects
     |> Map.values()
     |> Enum.filter(fn obj ->
-      Alchemoo.Database.Flags.set?(obj.flags, Alchemoo.Database.Flags.user())
+      Flags.set?(obj.flags, Flags.user())
     end)
     |> Enum.map(& &1.id)
   end

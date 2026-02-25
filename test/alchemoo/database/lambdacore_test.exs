@@ -3,7 +3,7 @@ defmodule Alchemoo.Database.LambdaCoreTest do
   alias Alchemoo.Database.Parser
 
   test "parses LambdaCore Format 4" do
-    {:ok, db} = Parser.parse_file("/tmp/LambdaCore-12Apr99.db")
+    {:ok, db} = Parser.parse_file("test/fixtures/lambdacore.db")
 
     assert db.version == 4
     assert db.object_count == 95
@@ -28,7 +28,7 @@ defmodule Alchemoo.Database.LambdaCoreTest do
   end
 
   test "parses verb code from LambdaCore" do
-    {:ok, db} = Parser.parse_file("/tmp/LambdaCore-12Apr99.db")
+    {:ok, db} = Parser.parse_file("test/fixtures/lambdacore.db")
 
     # Check that #0:0 (do_login_command) has code
     system = db.objects[0]
@@ -45,7 +45,7 @@ defmodule Alchemoo.Database.LambdaCoreTest do
   end
 
   test "parses multiple verb codes" do
-    {:ok, db} = Parser.parse_file("/tmp/LambdaCore-12Apr99.db")
+    {:ok, db} = Parser.parse_file("test/fixtures/lambdacore.db")
 
     # Check system object has multiple verbs with code
     system = db.objects[0]

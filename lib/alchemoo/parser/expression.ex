@@ -34,7 +34,7 @@ defmodule Alchemoo.Parser.Expression do
     # 4. Multi-char operators: == | != | <= | >= | && | || | ..
     # 5. Single-char symbols: [\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@\.]
     token_regex =
-      ~r/"(?:[^"\\]|\\.)*"|#[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*|-?[0-9]+|==|!=|<=|>=|&&|\|\||\.\.|[\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@]/
+      ~r/"(?:[^"\\]|\\.)*"|#[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*|-?[0-9]+|==|!=|<=|>=|&&|\|\||\.\.|\$|[\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@]/
 
     Regex.scan(token_regex, input)
     |> Enum.map(fn [match] -> match end)
@@ -47,25 +47,20 @@ defmodule Alchemoo.Parser.Expression do
 
   # Assignment: var = expr
   defp parse_assignment(tokens) do
-    case parse_conditional(tokens) do
-      {:ok, left, ["=" | rest]} ->
-        # Check if left is valid assignment target
-        case valid_assignment_target?(left) do
-          true ->
-            case parse_assignment(rest) do
-              {:ok, right, rest} ->
-                {:ok, %AST.Assignment{target: left, value: right}, rest}
+    with {:ok, left, ["=" | rest]} <- parse_conditional(tokens) do
+      handle_assignment_rest(left, rest)
+    end
+  end
 
-              err ->
-                err
-            end
-
-          false ->
-            {:error, :invalid_assignment_target}
+  defp handle_assignment_rest(left, rest) do
+    case valid_assignment_target?(left) do
+      true ->
+        with {:ok, right, rest} <- parse_assignment(rest) do
+          {:ok, %AST.Assignment{target: left, value: right}, rest}
         end
 
-      other ->
-        other
+      false ->
+        {:error, :invalid_assignment_target}
     end
   end
 
@@ -219,6 +214,20 @@ defmodule Alchemoo.Parser.Expression do
     end
   end
 
+  defp parse_primary(["$" | rest]) do
+    case rest do
+      [name | rest] ->
+        if Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, name) do
+          handle_system_call_or_prop(name, rest)
+        else
+          {:error, {:expected_identifier_after_dollar, name}}
+        end
+
+      [] ->
+        {:error, :unexpected_end_after_dollar}
+    end
+  end
+
   defp parse_primary([<<"\"", _::binary>> = token | rest]) do
     str = token |> String.trim("\"") |> unescape_string()
     parse_suffix(%AST.Literal{value: Value.str(str)}, rest)
@@ -291,6 +300,22 @@ defmodule Alchemoo.Parser.Expression do
 
   defp handle_call_or_var(name, rest) do
     parse_suffix(%AST.Var{name: name}, rest)
+  end
+
+  defp handle_system_call_or_prop(name, ["(" | args_tokens]) do
+    case parse_func_args(args_tokens, []) do
+      {:ok, args, rest} ->
+        system_obj = %AST.Literal{value: Value.obj(0)}
+        parse_suffix(%AST.VerbCall{obj: system_obj, verb: name, args: args}, rest)
+
+      err ->
+        err
+    end
+  end
+
+  defp handle_system_call_or_prop(name, rest) do
+    system_obj = %AST.Literal{value: Value.obj(0)}
+    parse_suffix(%AST.PropRef{obj: system_obj, prop: name}, rest)
   end
 
   # Suffixes: .prop, :verb(), [idx], [start..end]

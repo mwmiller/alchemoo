@@ -39,7 +39,7 @@ Alchemoo is now a functional MOO server that can:
 mix deps.get
 
 # Load a MOO database (optional)
-# Place your .db file in /tmp/
+# Place your .db file in tmp/
 
 # Start the server
 mix run --no-halt
@@ -86,9 +86,11 @@ config :alchemoo, :moo_name, "MyMOO"
 # CONFIG: Welcome text (shown in login banner if database doesn't provide one)
 config :alchemoo, :welcome_text, "Welcome to our world!"
 
+# CONFIG: Base directory for persistent data
+config :alchemoo, :base_dir, "tmp"
+
 # CONFIG: Checkpoint settings
 config :alchemoo, :checkpoint,
-  dir: "/tmp/alchemoo/checkpoints",
   interval: 300_000,  # 5 minutes
   keep_last: 5,
   moo_export_interval: 11,

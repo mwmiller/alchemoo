@@ -81,7 +81,7 @@ defmodule Alchemoo.Network.SSH do
   end
 
   def start_link(_opts) do
-    # TODO: Implement SSH server
+    # FUTURE: Implement SSH server
     :ignore
   end
 end

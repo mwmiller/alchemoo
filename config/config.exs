@@ -1,5 +1,7 @@
 import Config
 
+config :alchemoo, :base_dir, "tmp"
+
 config :alchemoo, :network,
   telnet: %{enabled: true, port: 7777},
   ssh: %{enabled: false, port: 2222},

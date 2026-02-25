@@ -7,12 +7,12 @@ defmodule Alchemoo.Database.ServerTest do
 
   describe "load/1" do
     test "loads LambdaCore database" do
-      assert {:ok, count} = Server.load("/tmp/LambdaCore-12Apr99.db")
+      assert {:ok, count} = Server.load("test/fixtures/lambdacore.db")
       assert count == 95
     end
 
     test "returns stats after loading" do
-      Server.load("/tmp/LambdaCore-12Apr99.db")
+      Server.load("test/fixtures/lambdacore.db")
 
       stats = Server.stats()
       assert stats.loaded == true
@@ -22,7 +22,7 @@ defmodule Alchemoo.Database.ServerTest do
 
   describe "get_object/1" do
     setup do
-      Server.load("/tmp/LambdaCore-12Apr99.db")
+      Server.load("test/fixtures/lambdacore.db")
       :ok
     end
 
@@ -39,7 +39,7 @@ defmodule Alchemoo.Database.ServerTest do
 
   describe "get_property/2" do
     setup do
-      Server.load("/tmp/LambdaCore-12Apr99.db")
+      Server.load("test/fixtures/lambdacore.db")
       :ok
     end
 
@@ -63,7 +63,7 @@ defmodule Alchemoo.Database.ServerTest do
 
   describe "find_verb/2" do
     setup do
-      Server.load("/tmp/LambdaCore-12Apr99.db")
+      Server.load("test/fixtures/lambdacore.db")
       :ok
     end
 
@@ -81,7 +81,7 @@ defmodule Alchemoo.Database.ServerTest do
 
   describe "get_snapshot/0" do
     test "returns database snapshot" do
-      Server.load("/tmp/LambdaCore-12Apr99.db")
+      Server.load("test/fixtures/lambdacore.db")
 
       db = Server.get_snapshot()
       assert map_size(db.objects) == 95

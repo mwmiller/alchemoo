@@ -3,6 +3,7 @@ defmodule Alchemoo.Database.Writer do
   Serializes the database back to MOO format.
   """
   alias Alchemoo.Database
+  alias Alchemoo.Database.Flags
   alias Alchemoo.Database.Object
 
   def write_moo(%Database{} = db, path) do
@@ -38,18 +39,18 @@ defmodule Alchemoo.Database.Writer do
   end
 
   defp count_players(db) do
-    db.objects |> Map.values() |> Enum.count(&is_player?/1)
+    db.objects |> Map.values() |> Enum.count(&player?/1)
   end
 
   defp get_player_list(db) do
     db.objects
     |> Map.values()
-    |> Enum.filter(&is_player?/1)
+    |> Enum.filter(&player?/1)
     |> Enum.map(&"##{&1.id}")
   end
 
-  defp is_player?(obj) do
-    Alchemoo.Database.Flags.set?(obj.flags, Alchemoo.Database.Flags.user())
+  defp player?(obj) do
+    Flags.set?(obj.flags, Flags.user())
   end
 
   defp serialize_object(%Object{} = obj) do
@@ -114,24 +115,21 @@ defmodule Alchemoo.Database.Writer do
     end
   end
 
-  defp error_to_code(e) do
-    case e do
-      :E_NONE -> 0
-      :E_TYPE -> 1
-      :E_DIV -> 2
-      :E_PERM -> 3
-      :E_PROPNF -> 4
-      :E_VERBNF -> 5
-      :E_VARNF -> 6
-      :E_INVIND -> 7
-      :E_RECMOVE -> 8
-      :E_MAXREC -> 9
-      :E_RANGE -> 10
-      :E_ARGS -> 11
-      :E_NACC -> 12
-      :E_INVARG -> 13
-      :E_QUOTA -> 14
-      :E_FLOAT -> 15
-    end
-  end
+  defp error_to_code(:E_NONE), do: 0
+  defp error_to_code(:E_TYPE), do: 1
+  defp error_to_code(:E_DIV), do: 2
+  defp error_to_code(:E_PERM), do: 3
+  defp error_to_code(:E_PROPNF), do: 4
+  defp error_to_code(:E_VERBNF), do: 5
+  defp error_to_code(:E_VARNF), do: 6
+  defp error_to_code(:E_INVIND), do: 7
+  defp error_to_code(:E_RECMOVE), do: 8
+  defp error_to_code(:E_MAXREC), do: 9
+  defp error_to_code(:E_RANGE), do: 10
+  defp error_to_code(:E_ARGS), do: 11
+  defp error_to_code(:E_NACC), do: 12
+  defp error_to_code(:E_INVARG), do: 13
+  defp error_to_code(:E_QUOTA), do: 14
+  defp error_to_code(:E_FLOAT), do: 15
+  defp error_to_code(_), do: 0
 end

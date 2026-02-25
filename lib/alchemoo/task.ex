@@ -131,6 +131,30 @@ defmodule Alchemoo.Task do
       |> Map.put("this", Value.obj(this_id))
       |> Map.put("caller", Value.obj(caller_id))
       |> Map.put("args", Value.list(args))
+      # Standard MOO type constants
+      |> Map.put("INT", Value.num(0))
+      |> Map.put("NUM", Value.num(0))
+      |> Map.put("OBJ", Value.num(1))
+      |> Map.put("STR", Value.num(2))
+      |> Map.put("ERR", Value.num(3))
+      |> Map.put("LIST", Value.num(4))
+      # Standard MOO error constants
+      |> Map.put("E_NONE", Value.err(:E_NONE))
+      |> Map.put("E_TYPE", Value.err(:E_TYPE))
+      |> Map.put("E_DIV", Value.err(:E_DIV))
+      |> Map.put("E_PERM", Value.err(:E_PERM))
+      |> Map.put("E_PROPNF", Value.err(:E_PROPNF))
+      |> Map.put("E_VERBNF", Value.err(:E_VERBNF))
+      |> Map.put("E_VARNF", Value.err(:E_VARNF))
+      |> Map.put("E_INVIND", Value.err(:E_INVIND))
+      |> Map.put("E_RECMOVE", Value.err(:E_RECMOVE))
+      |> Map.put("E_MAXREC", Value.err(:E_MAXREC))
+      |> Map.put("E_RANGE", Value.err(:E_RANGE))
+      |> Map.put("E_ARGS", Value.err(:E_ARGS))
+      |> Map.put("E_NACC", Value.err(:E_NACC))
+      |> Map.put("E_INVARG", Value.err(:E_INVARG))
+      |> Map.put("E_QUOTA", Value.err(:E_QUOTA))
+      |> Map.put("E_FLOAT", Value.err(:E_FLOAT))
       |> Map.put_new("verb", Value.str(verb_name))
       |> Map.put_new("argstr", Value.str(""))
       |> Map.put_new("dobj", Value.obj(-1))
@@ -263,10 +287,10 @@ defmodule Alchemoo.Task do
 
     # Execute with tick counting
     try do
-      result = execute_statements(ast.statements, task.env)
+      {result, final_env} = execute_statements(ast.statements, task.env)
 
       ticks_used = task.tick_quota - task.ticks_used - Process.get(:ticks_remaining)
-      new_task = %{task | ticks_used: task.ticks_used + ticks_used}
+      new_task = %{task | ticks_used: task.ticks_used + ticks_used, env: final_env}
       {:ok, result, new_task}
     catch
       {:return, value} ->
@@ -287,25 +311,23 @@ defmodule Alchemoo.Task do
     execute_statements_loop(statements, env)
   end
 
-  defp execute_statements_loop([], _env) do
+  defp execute_statements_loop([], env) do
     # No statements, return 0
-    Value.num(0)
+    {Value.num(0), env}
   end
 
   defp execute_statements_loop([stmt], env) do
-    # Last statement - return its value
+    # Last statement - return its value and env
     case Interpreter.eval(stmt, env) do
-      {:ok, value, _new_env} -> value
-      {:ok, value} -> value
+      {:ok, value, new_env} -> {value, new_env}
       {:error, err} -> throw({:error, err})
     end
   end
 
   defp execute_statements_loop([stmt | rest], env) do
-    # Not last statement - continue
+    # Not last statement - continue with updated env
     case Interpreter.eval(stmt, env) do
       {:ok, _value, new_env} -> execute_statements_loop(rest, new_env)
-      {:ok, _value} -> execute_statements_loop(rest, env)
       {:error, err} -> throw({:error, err})
     end
   end

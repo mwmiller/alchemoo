@@ -6,6 +6,7 @@ defmodule Alchemoo.Database.Server do
   require Logger
 
   alias Alchemoo.Database
+  alias Alchemoo.Database.Flags
   alias Alchemoo.Database.Object
   alias Alchemoo.Database.Property
   alias Alchemoo.Database.Verb
@@ -54,7 +55,7 @@ defmodule Alchemoo.Database.Server do
     GenServer.call(__MODULE__, {:set_property_info, obj_id, prop_name, info})
   end
 
-  def is_clear_property?(obj_id, prop_name) do
+  def clear_property?(obj_id, prop_name) do
     GenServer.call(__MODULE__, {:is_clear_property, obj_id, prop_name})
   end
 
@@ -225,175 +226,85 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def handle_call({:set_property, obj_id, prop_name, value}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
-
-      obj ->
-        # Check if it's an inherited override
-        case Enum.find_index(obj.properties, &(&1.name == prop_name)) do
-          nil ->
-            # Update overridden_properties map
-            new_overridden =
-              Map.put(obj.overridden_properties, prop_name, %Property{
-                name: prop_name,
-                value: value
-              })
-
-            new_obj = %{obj | overridden_properties: new_overridden}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:reply, :ok, %{state | db: new_db}}
-
-          idx ->
-            # Update local property
-            new_props = List.update_at(obj.properties, idx, fn p -> %{p | value: value} end)
-            new_obj = %{obj | properties: new_props}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:reply, :ok, %{state | db: new_db}}
-        end
+    case perform_set_property(state, obj_id, prop_name, value) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      {:error, err} -> {:reply, {:error, err}, state}
     end
   end
 
   @impl true
   def handle_call({:get_property_info, obj_id, prop_name}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
+    res =
+      with {:ok, obj} <- get_obj(state, obj_id),
+           {:ok, prop} <- find_prop(obj, prop_name) do
+        {:ok, {prop.owner, prop.perms}}
+      end
 
-      obj ->
-        case Enum.find(obj.properties, &(&1.name == prop_name)) do
-          nil -> {:reply, {:error, :E_PROPNF}, state}
-          prop -> {:reply, {:ok, {prop.owner, prop.perms}}, state}
-        end
-    end
+    {:reply, res, state}
   end
 
   @impl true
-  def handle_call({:set_property_info, obj_id, prop_name, {owner, perms}}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
-
-      obj ->
-        case Enum.find_index(obj.properties, &(&1.name == prop_name)) do
-          nil ->
-            {:reply, {:error, :E_PROPNF}, state}
-
-          idx ->
-            new_props =
-              List.update_at(obj.properties, idx, fn p -> %{p | owner: owner, perms: perms} end)
-
-            new_obj = %{obj | properties: new_props}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:reply, :ok, %{state | db: new_db}}
-        end
+  def handle_call({:set_property_info, obj_id, prop_name, info}, _from, state) do
+    case perform_set_property_info(state, obj_id, prop_name, info) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      {:error, err} -> {:reply, {:error, err}, state}
     end
   end
 
   @impl true
   def handle_call({:is_clear_property, obj_id, prop_name}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
+    res =
+      with {:ok, obj} <- get_obj(state, obj_id),
+           {:ok, prop} <- find_prop(obj, prop_name) do
+        {:ok, prop.value == :clear}
+      end
 
-      obj ->
-        case Enum.find(obj.properties, &(&1.name == prop_name)) do
-          nil -> {:reply, {:error, :E_PROPNF}, state}
-          prop -> {:reply, {:ok, prop.value == :clear}, state}
-        end
-    end
+    {:reply, res, state}
   end
 
   @impl true
   def handle_call({:get_verb_info, obj_id, verb_name}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
+    res =
+      with {:ok, obj} <- get_obj(state, obj_id),
+           {:ok, verb} <- find_verb_local(obj, verb_name) do
+        {:ok, {verb.owner, verb.perms, verb.name}}
+      end
 
-      obj ->
-        case Enum.find(obj.verbs, &Verb.match?(&1, verb_name)) do
-          nil -> {:reply, {:error, :E_VERBNF}, state}
-          verb -> {:reply, {:ok, {verb.owner, verb.perms, verb.name}}, state}
-        end
-    end
+    {:reply, res, state}
   end
 
   @impl true
-  def handle_call({:set_verb_info, obj_id, verb_name, {owner, perms, name}}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
-
-      obj ->
-        case Enum.find_index(obj.verbs, &Verb.match?(&1, verb_name)) do
-          nil ->
-            {:reply, {:error, :E_VERBNF}, state}
-
-          idx ->
-            new_verbs =
-              List.update_at(obj.verbs, idx, fn v ->
-                %{v | owner: owner, perms: perms, name: name}
-              end)
-
-            new_obj = %{obj | verbs: new_verbs}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:reply, :ok, %{state | db: new_db}}
-        end
+  def handle_call({:set_verb_info, obj_id, verb_name, info}, _from, state) do
+    case perform_set_verb_info(state, obj_id, verb_name, info) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      {:error, err} -> {:reply, {:error, err}, state}
     end
   end
 
   @impl true
   def handle_call({:get_verb_args, obj_id, verb_name}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
+    res =
+      with {:ok, obj} <- get_obj(state, obj_id),
+           {:ok, verb} <- find_verb_local(obj, verb_name) do
+        {:ok, verb.args}
+      end
 
-      obj ->
-        case Enum.find(obj.verbs, &Verb.match?(&1, verb_name)) do
-          nil -> {:reply, {:error, :E_VERBNF}, state}
-          verb -> {:reply, {:ok, verb.args}, state}
-        end
-    end
+    {:reply, res, state}
   end
 
   @impl true
   def handle_call({:set_verb_args, obj_id, verb_name, args}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
-
-      obj ->
-        case Enum.find_index(obj.verbs, &Verb.match?(&1, verb_name)) do
-          nil ->
-            {:reply, {:error, :E_VERBNF}, state}
-
-          idx ->
-            new_verbs = List.update_at(obj.verbs, idx, fn v -> %{v | args: args} end)
-            new_obj = %{obj | verbs: new_verbs}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:reply, :ok, %{state | db: new_db}}
-        end
+    case perform_set_verb_args(state, obj_id, verb_name, args) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      {:error, err} -> {:reply, {:error, err}, state}
     end
   end
 
   @impl true
   def handle_call({:set_verb_code, obj_id, verb_name, code}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
-
-      obj ->
-        case Enum.find_index(obj.verbs, &Verb.match?(&1, verb_name)) do
-          nil ->
-            {:reply, {:error, :E_VERBNF}, state}
-
-          idx ->
-            # Clear AST when code changes
-            new_verbs = List.update_at(obj.verbs, idx, fn v -> %{v | code: code, ast: nil} end)
-            new_obj = %{obj | verbs: new_verbs}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:reply, :ok, %{state | db: new_db}}
-        end
+    case perform_set_verb_code(state, obj_id, verb_name, code) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      {:error, err} -> {:reply, {:error, err}, state}
     end
   end
 
@@ -539,21 +450,9 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def handle_call({:set_player_flag, obj_id, value}, _from, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:reply, {:error, :E_INVIND}, state}
-
-      obj ->
-        new_flags =
-          if value do
-            Alchemoo.Database.Flags.set(obj.flags, Alchemoo.Database.Flags.user())
-          else
-            Alchemoo.Database.Flags.clear(obj.flags, Alchemoo.Database.Flags.user())
-          end
-
-        new_obj = %{obj | flags: new_flags}
-        new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-        {:reply, :ok, %{state | db: new_db}}
+    case perform_set_player_flag(state, obj_id, value) do
+      {:ok, new_state} -> {:reply, :ok, new_state}
+      {:error, err} -> {:reply, {:error, err}, state}
     end
   end
 
@@ -572,7 +471,7 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def handle_call({:renumber_object, _obj_id}, _from, state) do
-    # PONDER: Placeholder for renumbering logic
+    # FUTURE: Placeholder for renumbering logic
     {:reply, :ok, state}
   end
 
@@ -585,25 +484,129 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def handle_cast({:set_verb_ast, obj_id, verb_name, ast}, state) do
-    case Map.get(state.db.objects, obj_id) do
-      nil ->
-        {:noreply, state}
-
-      obj ->
-        case Enum.find_index(obj.verbs, &Verb.match?(&1, verb_name)) do
-          nil ->
-            {:noreply, state}
-
-          idx ->
-            new_verbs = List.update_at(obj.verbs, idx, fn v -> %{v | ast: ast} end)
-            new_obj = %{obj | verbs: new_verbs}
-            new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
-            {:noreply, %{state | db: new_db}}
-        end
+    case perform_set_verb_ast(state, obj_id, verb_name, ast) do
+      {:ok, new_state} -> {:noreply, new_state}
+      _ -> {:noreply, state}
     end
   end
 
   ## Private Helpers
+
+  defp get_obj(state, id) do
+    case Map.get(state.db.objects, id) do
+      nil -> {:error, :E_INVIND}
+      obj -> {:ok, obj}
+    end
+  end
+
+  defp find_prop(obj, name) do
+    case Enum.find(obj.properties, &(&1.name == name)) do
+      nil -> {:error, :E_PROPNF}
+      prop -> {:ok, prop}
+    end
+  end
+
+  defp find_prop_idx(obj, name) do
+    case Enum.find_index(obj.properties, &(&1.name == name)) do
+      nil -> {:error, :E_PROPNF}
+      idx -> {:ok, idx}
+    end
+  end
+
+  defp find_verb_local(obj, name) do
+    case Enum.find(obj.verbs, &Verb.match?(&1, name)) do
+      nil -> {:error, :E_VERBNF}
+      verb -> {:ok, verb}
+    end
+  end
+
+  defp find_verb_idx(obj, name) do
+    case Enum.find_index(obj.verbs, &Verb.match?(&1, name)) do
+      nil -> {:error, :E_VERBNF}
+      idx -> {:ok, idx}
+    end
+  end
+
+  defp update_obj(state, id, obj) do
+    new_db = %{state.db | objects: Map.put(state.db.objects, id, obj)}
+    %{state | db: new_db}
+  end
+
+  defp perform_set_property(state, obj_id, prop_name, value) do
+    with {:ok, obj} <- get_obj(state, obj_id) do
+      case Enum.find_index(obj.properties, &(&1.name == prop_name)) do
+        nil ->
+          # Update overridden_properties map
+          new_overridden =
+            Map.put(obj.overridden_properties, prop_name, %Property{
+              name: prop_name,
+              value: value
+            })
+
+          {:ok, update_obj(state, obj_id, %{obj | overridden_properties: new_overridden})}
+
+        idx ->
+          # Update local property
+          new_props = List.update_at(obj.properties, idx, &%{&1 | value: value})
+          {:ok, update_obj(state, obj_id, %{obj | properties: new_props})}
+      end
+    end
+  end
+
+  defp perform_set_property_info(state, obj_id, prop_name, {owner, perms}) do
+    with {:ok, obj} <- get_obj(state, obj_id),
+         {:ok, idx} <- find_prop_idx(obj, prop_name) do
+      new_props = List.update_at(obj.properties, idx, &%{&1 | owner: owner, perms: perms})
+      {:ok, update_obj(state, obj_id, %{obj | properties: new_props})}
+    end
+  end
+
+  defp perform_set_verb_info(state, obj_id, verb_name, {owner, perms, name}) do
+    with {:ok, obj} <- get_obj(state, obj_id),
+         {:ok, idx} <- find_verb_idx(obj, verb_name) do
+      new_verbs = List.update_at(obj.verbs, idx, &%{&1 | owner: owner, perms: perms, name: name})
+      {:ok, update_obj(state, obj_id, %{obj | verbs: new_verbs})}
+    end
+  end
+
+  defp perform_set_verb_args(state, obj_id, verb_name, args) do
+    with {:ok, obj} <- get_obj(state, obj_id),
+         {:ok, idx} <- find_verb_idx(obj, verb_name) do
+      new_verbs = List.update_at(obj.verbs, idx, &%{&1 | args: args})
+      {:ok, update_obj(state, obj_id, %{obj | verbs: new_verbs})}
+    end
+  end
+
+  defp perform_set_verb_code(state, obj_id, verb_name, code) do
+    with {:ok, obj} <- get_obj(state, obj_id),
+         {:ok, idx} <- find_verb_idx(obj, verb_name) do
+      new_verbs = List.update_at(obj.verbs, idx, &%{&1 | code: code, ast: nil})
+      {:ok, update_obj(state, obj_id, %{obj | verbs: new_verbs})}
+    end
+  end
+
+  defp perform_set_player_flag(state, obj_id, value) do
+    with {:ok, obj} <- get_obj(state, obj_id) do
+      new_flags =
+        case value do
+          true -> Flags.set(obj.flags, Flags.user())
+          false -> Flags.clear(obj.flags, Flags.user())
+          1 -> Flags.set(obj.flags, Flags.user())
+          0 -> Flags.clear(obj.flags, Flags.user())
+          _ -> Flags.set(obj.flags, Flags.user())
+        end
+
+      {:ok, update_obj(state, obj_id, %{obj | flags: new_flags})}
+    end
+  end
+
+  defp perform_set_verb_ast(state, obj_id, verb_name, ast) do
+    with {:ok, obj} <- get_obj(state, obj_id),
+         {:ok, idx} <- find_verb_idx(obj, verb_name) do
+      new_verbs = List.update_at(obj.verbs, idx, &%{&1 | ast: ast})
+      {:ok, update_obj(state, obj_id, %{obj | verbs: new_verbs})}
+    end
+  end
 
   defp find_verb_recursive(objects, obj_id, verb_name) do
     case Map.get(objects, obj_id) do
@@ -624,21 +627,29 @@ defmodule Alchemoo.Database.Server do
         nil
 
       obj ->
-        # Check local properties first
-        case Enum.find(obj.properties, &(&1.name == prop_name)) do
-          %Property{value: :clear} ->
-            find_property_recursive(objects, obj.parent, prop_name)
+        lookup_prop_step(objects, obj, prop_name)
+    end
+  end
 
-          prop when not is_nil(prop) ->
-            {:ok, prop.value}
+  defp lookup_prop_step(objects, obj, prop_name) do
+    # Check local properties first
+    case Enum.find(obj.properties, &(&1.name == prop_name)) do
+      %Property{value: :clear} ->
+        find_property_recursive(objects, obj.parent, prop_name)
 
-          nil ->
-            # Check overridden inherited properties
-            case Map.get(obj.overridden_properties, prop_name) do
-              nil -> find_property_recursive(objects, obj.parent, prop_name)
-              prop -> {:ok, prop.value}
-            end
-        end
+      prop when not is_nil(prop) ->
+        {:ok, prop.value}
+
+      nil ->
+        lookup_overridden_prop(objects, obj, prop_name)
+    end
+  end
+
+  defp lookup_overridden_prop(objects, obj, prop_name) do
+    # Check overridden inherited properties
+    case Map.get(obj.overridden_properties, prop_name) do
+      nil -> find_property_recursive(objects, obj.parent, prop_name)
+      prop -> {:ok, prop.value}
     end
   end
 end

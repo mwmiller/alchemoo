@@ -65,12 +65,12 @@ defmodule Alchemoo.InheritanceTest do
 
     runtime = update_in(runtime.objects[1].verbs, &[parent_only_verb | &1])
 
-    assert {:ok, Value.num(42)} ==
+    assert {:ok, {:num, 42}, _} =
              Runtime.call_verb(runtime, Value.obj(2), "parent_verb", [], %{})
   end
 
   test "pass() calls parent verb", %{runtime: runtime} do
     # Call #2:test() which calls pass()
-    assert {:ok, Value.str("parent")} == Runtime.call_verb(runtime, Value.obj(2), "test", [], %{})
+    assert {:ok, {:str, "parent"}, _} = Runtime.call_verb(runtime, Value.obj(2), "test", [], %{})
   end
 end

@@ -124,8 +124,8 @@ iex> Alchemoo.Checkpoint.Server.checkpoint()
 {:ok, "checkpoint-20240115T123045Z.db"}
 
 # Export to MOO format (for sharing)
-iex> Alchemoo.Checkpoint.Server.export_moo("/tmp/my-world.db")
-{:ok, "/tmp/my-world.db"}
+iex> Alchemoo.Checkpoint.Server.export_moo("tmp/my-world.db")
+{:ok, "tmp/my-world.db"}
 
 # In MOO code (future)
 dump_database()
@@ -351,7 +351,7 @@ This ensures no data loss when stopping the server gracefully.
 ```elixir
 config :alchemoo,
   checkpoint: %{
-    dir: "/tmp/alchemoo/checkpoints",
+    dir: "tmp/alchemoo/checkpoints",
     load_on_startup: :latest,
     interval: 60_000,  # 1 minute
     keep_last: 5,
@@ -375,7 +375,7 @@ config :alchemoo,
 ```elixir
 config :alchemoo,
   checkpoint: %{
-    dir: "/tmp/alchemoo/test-checkpoints",
+    dir: "tmp/alchemoo/test-checkpoints",
     load_on_startup: :none,  # Start fresh
     interval: :infinity,  # Manual only
     keep_last: 0,  # Keep all

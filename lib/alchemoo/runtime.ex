@@ -7,6 +7,7 @@ defmodule Alchemoo.Runtime do
   require Logger
 
   alias Alchemoo.Database
+  alias Alchemoo.Database.Server, as: DB
   alias Alchemoo.Database.Verb
   alias Alchemoo.Parser.MOOSimple
   alias Alchemoo.Value
@@ -43,9 +44,24 @@ defmodule Alchemoo.Runtime do
       nil ->
         {:error, Value.err(:E_INVIND)}
 
-      _object ->
-        # For now, just return success - full implementation would update the object
-        {:ok, value, runtime}
+      object ->
+        # Check if it's a local property
+        case Enum.find_index(object.properties, &(&1.name == prop_name)) do
+          idx when is_integer(idx) ->
+            # Update local property
+            new_properties = List.update_at(object.properties, idx, &%{&1 | value: value})
+            new_object = %{object | properties: new_properties}
+            new_objects = Map.put(runtime.objects, obj_id, new_object)
+            {:ok, value, %{runtime | objects: new_objects}}
+
+          nil ->
+            # Check inherited property and override it
+            new_prop = %Alchemoo.Database.Property{name: prop_name, value: value}
+            new_overridden = Map.put(object.overridden_properties, prop_name, new_prop)
+            new_object = %{object | overridden_properties: new_overridden}
+            new_objects = Map.put(runtime.objects, obj_id, new_object)
+            {:ok, value, %{runtime | objects: new_objects}}
+        end
     end
   end
 
@@ -67,8 +83,21 @@ defmodule Alchemoo.Runtime do
     actual_receiver = receiver_id || obj_id
 
     case Map.get(runtime.objects, obj_id) do
-      nil -> {:error, Value.err(:E_INVIND)}
-      object -> find_and_call_verb(object, verb_name, args, env, runtime, actual_receiver)
+      nil ->
+        if obj_id < 0 and verb_name == "tell" do
+          # Special case for tell on negative IDs (un-logged-in connections)
+          Alchemoo.Builtins.notify([
+            Value.obj(obj_id),
+            Value.str(Enum.map_join(args, &Value.to_literal/1))
+          ])
+
+          {:ok, Value.num(1), runtime}
+        else
+          {:error, Value.err(:E_INVIND)}
+        end
+
+      object ->
+        find_and_call_verb(object, verb_name, args, env, runtime, actual_receiver)
     end
   end
 
@@ -77,25 +106,30 @@ defmodule Alchemoo.Runtime do
   # Find property in object or its parents
   defp find_property(object, prop_name, runtime) do
     case lookup_builtin_property(object, prop_name) do
-      {:ok, _} = result ->
-        result
+      {:ok, _} = result -> result
+      :not_builtin -> find_non_builtin_property(object, prop_name, runtime)
+    end
+  end
 
-      :not_builtin ->
-        # Check local properties first
-        case Enum.find(object.properties, &(&1.name == prop_name)) do
-          %Alchemoo.Database.Property{value: :clear} ->
-            lookup_parent_property(object.parent, prop_name, runtime)
+  defp find_non_builtin_property(object, prop_name, runtime) do
+    # Check local properties first
+    case Enum.find(object.properties, &(&1.name == prop_name)) do
+      %Alchemoo.Database.Property{value: :clear} ->
+        lookup_parent_property(object.parent, prop_name, runtime)
 
-          prop when not is_nil(prop) ->
-            {:ok, prop.value}
+      prop when not is_nil(prop) ->
+        {:ok, prop.value}
 
-          nil ->
-            # Check overridden inherited properties
-            case Map.get(object.overridden_properties, prop_name) do
-              nil -> lookup_parent_property(object.parent, prop_name, runtime)
-              prop -> {:ok, prop.value}
-            end
-        end
+      nil ->
+        find_overridden_property(object, prop_name, runtime)
+    end
+  end
+
+  defp find_overridden_property(object, prop_name, runtime) do
+    # Check overridden inherited properties
+    case Map.get(object.overridden_properties, prop_name) do
+      nil -> lookup_parent_property(object.parent, prop_name, runtime)
+      prop -> {:ok, prop.value}
     end
   end
 
@@ -200,40 +234,59 @@ defmodule Alchemoo.Runtime do
   end
 
   defp perform_verb_execution(verb, this_id, args, env, runtime, context) do
-    definer_id = context[:verb_definer] || this_id
-
-    # Check for cached AST
     case verb.ast do
-      %Alchemoo.AST.Block{statements: stmts} ->
-        Logger.debug("Runtime: executing cached AST for #{Alchemoo.Value.to_literal(Value.obj(this_id))}:#{verb.name}()")
-        verb_env = build_verb_env(env, runtime, args, this_id, verb.name, context)
-
-        case execute_statements(stmts, verb_env) do
-          {:ok, result} ->
-            {:ok, result}
-
-          {:error, reason} ->
-            # If execution fails, invalidate the cache just in case the AST is problematic
-            Logger.info("Runtime: verb execution failed for ##{this_id}:#{verb.name}, invalidating AST cache")
-            Alchemoo.Database.Server.set_verb_ast(definer_id, verb.name, nil)
-            {:error, reason}
-        end
+      %Alchemoo.AST.Block{} = ast ->
+        execute_cached_ast(ast, verb, this_id, args, env, runtime, context)
 
       nil ->
-        Logger.debug("Runtime: parsing verb code for #{Alchemoo.Value.to_literal(Value.obj(this_id))}:#{verb.name}()")
+        parse_and_execute_verb(verb, this_id, args, env, runtime, context)
+    end
+  end
 
-        case MOOSimple.parse(verb.code) do
-          {:ok, %Alchemoo.AST.Block{statements: stmts} = ast} ->
-            # Cache AST in server for future calls
-            Alchemoo.Database.Server.set_verb_ast(definer_id, verb.name, ast)
+  defp execute_cached_ast(ast, verb, this_id, args, env, runtime, context) do
+    Logger.debug(
+      "Runtime: executing cached AST for #{Value.to_literal(Value.obj(this_id))}:#{verb.name}()"
+    )
 
-            verb_env = build_verb_env(env, runtime, args, this_id, verb.name, context)
-            execute_statements(stmts, verb_env)
+    verb_env = build_verb_env(env, runtime, args, this_id, verb.name, context)
 
-          {:error, reason} ->
-            Logger.error("Runtime: failed to parse verb code for ##{this_id}:#{verb.name}: #{inspect(reason)}")
-            {:error, Value.err(:E_VERBNF)}
-        end
+    case execute_statements(ast.statements, verb_env) do
+      {:ok, result, final_env} ->
+        {:ok, result, Map.get(final_env, :runtime, runtime)}
+
+      {:error, reason} ->
+        handle_exec_failure(verb, this_id, reason, context)
+    end
+  end
+
+  defp handle_exec_failure(verb, this_id, reason, context) do
+    # If execution fails, invalidate the cache just in case the AST is problematic
+    Logger.info(
+      "Runtime: verb execution failed for ##{this_id}:#{verb.name}, invalidating AST cache"
+    )
+
+    definer_id = context[:verb_definer] || this_id
+    DB.set_verb_ast(definer_id, verb.name, nil)
+    {:error, reason}
+  end
+
+  defp parse_and_execute_verb(verb, this_id, args, env, runtime, context) do
+    Logger.debug(
+      "Runtime: parsing verb code for #{Value.to_literal(Value.obj(this_id))}:#{verb.name}()"
+    )
+
+    case MOOSimple.parse(verb.code) do
+      {:ok, %Alchemoo.AST.Block{} = ast} ->
+        definer_id = context[:verb_definer] || this_id
+        DB.set_verb_ast(definer_id, verb.name, ast)
+        execute_cached_ast(ast, verb, this_id, args, env, runtime, context)
+
+      {:error, reason} ->
+        Logger.error(
+          "Runtime: failed to parse verb code for ##{this_id}:#{verb.name}: #{inspect(reason)}"
+        )
+
+        {:error, Value.err(:E_VERBNF)}
     end
   end
 
@@ -245,6 +298,30 @@ defmodule Alchemoo.Runtime do
       "player" => Value.obj(context[:player] || 2),
       "caller" => Value.obj(context[:caller] || -1),
       "verb" => Value.str(verb_name),
+      # Standard MOO type constants
+      "INT" => Value.num(0),
+      "NUM" => Value.num(0),
+      "OBJ" => Value.num(1),
+      "STR" => Value.num(2),
+      "ERR" => Value.num(3),
+      "LIST" => Value.num(4),
+      # Standard MOO error constants
+      "E_NONE" => Value.err(:E_NONE),
+      "E_TYPE" => Value.err(:E_TYPE),
+      "E_DIV" => Value.err(:E_DIV),
+      "E_PERM" => Value.err(:E_PERM),
+      "E_PROPNF" => Value.err(:E_PROPNF),
+      "E_VERBNF" => Value.err(:E_VERBNF),
+      "E_VARNF" => Value.err(:E_VARNF),
+      "E_INVIND" => Value.err(:E_INVIND),
+      "E_RECMOVE" => Value.err(:E_RECMOVE),
+      "E_MAXREC" => Value.err(:E_MAXREC),
+      "E_RANGE" => Value.err(:E_RANGE),
+      "E_ARGS" => Value.err(:E_ARGS),
+      "E_NACC" => Value.err(:E_NACC),
+      "E_INVARG" => Value.err(:E_INVARG),
+      "E_QUOTA" => Value.err(:E_QUOTA),
+      "E_FLOAT" => Value.err(:E_FLOAT),
       # Inherit command variables from caller's env
       "argstr" => Map.get(env, "argstr", Value.str("")),
       "dobj" => Map.get(env, "dobj", Value.obj(-1)),
@@ -256,21 +333,14 @@ defmodule Alchemoo.Runtime do
   end
 
   defp execute_statements(stmts, env) do
-    _final_env =
-      Enum.reduce(stmts, env, fn stmt, current_env ->
-        case Alchemoo.Interpreter.eval(stmt, current_env) do
-          {:ok, _, new_env} -> new_env
-          {:ok, _val} -> current_env
-          {:error, err} -> throw({:error, err})
-        end
-      end)
-
-    # If we get here, no explicit return - return 0
-    {:ok, Value.num(0)}
+    # Use Alchemoo.Interpreter.eval_block since it now handles env propagation
+    Alchemoo.Interpreter.eval(%Alchemoo.AST.Block{statements: stmts}, env)
   rescue
-    e -> {:error, e}
+    e ->
+      Logger.error("Runtime: execution exception: #{inspect(e)}")
+      {:error, e}
   catch
-    {:return, val} -> {:ok, val}
+    {:return, val} -> {:ok, val, env}
     {:error, err} -> {:error, err}
   end
 end
