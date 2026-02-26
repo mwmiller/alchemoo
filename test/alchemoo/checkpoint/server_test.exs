@@ -4,7 +4,7 @@ defmodule Alchemoo.Checkpoint.ServerTest do
   alias Alchemoo.Checkpoint.Server, as: Checkpoint
   alias Alchemoo.Database.Server, as: DB
 
-  @test_dir "tmp/checkpoints"
+  @test_dir "test/state/checkpoints"
 
   setup do
     # Clean test directory

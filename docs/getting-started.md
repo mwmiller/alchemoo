@@ -30,8 +30,11 @@ Alchemoo works best with an existing MOO database. Here are some options:
 LambdaCore is the classic MOO database, perfect for learning:
 
 ```bash
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+mkdir -p "$STATE_HOME/alchemoo"
+
 # Download LambdaCore
-curl -o tmp/LambdaCore-12Apr99.db \
+curl -o "$STATE_HOME/alchemoo/LambdaCore-12Apr99.db" \
   https://github.com/SevenEcks/LambdaMOO/raw/master/LambdaCore-12Apr99.db
 ```
 
@@ -41,7 +44,7 @@ JHCore is a more modern MOO database with additional features:
 
 ```bash
 # Download JHCore
-curl -o tmp/JHCore-DEV-2.db \
+curl -o "$STATE_HOME/alchemoo/JHCore-DEV-2.db" \
   https://github.com/SevenEcks/lambda-moo-programming/raw/master/databases/JHCore-DEV-2.db
 ```
 
@@ -133,7 +136,7 @@ Alchemoo uses sensible defaults, but you can customize:
 
 ```elixir
 # config/config.exs
-config :alchemoo, :base_dir, "tmp"
+config :alchemoo, :base_dir, Path.join(System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state"), "alchemoo")
 
 config :alchemoo, :checkpoint,
   interval: 300_000,  # 5 minutes
@@ -219,10 +222,11 @@ Make sure your database file is in the correct location:
 
 ```bash
 # Check if file exists
-ls -lh tmp/*.db
+STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
+ls -lh "$STATE_HOME/alchemoo"/*.db
 
 # Check file format
-head -1 tmp/LambdaCore-12Apr99.db
+head -1 "$STATE_HOME/alchemoo/LambdaCore-12Apr99.db"
 # Should show: ** LambdaMOO Database, Format Version 4 **
 ```
 

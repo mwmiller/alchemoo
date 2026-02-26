@@ -3,7 +3,9 @@ Mix.install([{:alchemoo, path: "."}])
 IO.puts("🚀 Alchemoo Verb Execution Demo\n")
 
 # Load database
-{:ok, db} = Alchemoo.Database.Parser.parse_file("tmp/LambdaCore-12Apr99.db")
+state_home = System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state")
+db_path = Path.join([state_home, "alchemoo", "LambdaCore-12Apr99.db"])
+{:ok, db} = Alchemoo.Database.Parser.parse_file(db_path)
 
 IO.puts("✓ Loaded LambdaCore")
 IO.puts("  Objects: #{map_size(db.objects)}")

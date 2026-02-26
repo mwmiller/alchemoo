@@ -32,9 +32,9 @@ defmodule Alchemoo.Parser.Expression do
     # 2. Object IDs: #[0-9]+
     # 3. Identifiers and numbers: [a-zA-Z_][a-zA-Z0-9_]* | -?[0-9]+
     # 4. Multi-char operators: == | != | <= | >= | && | || | ..
-    # 5. Single-char symbols: [\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@\.]
+    # 5. Single-char symbols: [\(\)\{\}\[\]\+\-\*\/\%\,\;\:\.\?\|\=\<\>\!\&\@\.]
     token_regex =
-      ~r/"(?:[^"\\]|\\.)*"|#[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*|-?[0-9]+|==|!=|<=|>=|&&|\|\||\.\.|=>|\$|[\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@\`\']/
+      ~r/"(?:[^"\\]|\\.)*"|#-?[0-9]+|-?(?:\d+\.(?!\.)\d*|\.\d+)(?:[eE][+-]?\d+)?|-?\d+[eE][+-]?\d+|-?[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*|==|!=|<=|>=|&&|\|\||\.\.|=>|\$|[\(\)\{\}\[\]\+\-\*\/\%\^\,\;\:\.\?\|\=\<\>\!\&\@\`\']/
 
     Regex.scan(token_regex, input)
     |> Enum.map(fn [match] -> match end)
@@ -178,6 +178,12 @@ defmodule Alchemoo.Parser.Expression do
     end
   end
 
+  defp parse_multiplicative(["-" | rest]) do
+    with {:ok, val, rest} <- parse_primary(rest) do
+      {:ok, %AST.UnaryOp{op: :-, expr: val}, rest}
+    end
+  end
+
   defp parse_multiplicative(tokens) do
     with {:ok, left, rest} <- parse_primary(tokens) do
       parse_multiplicative_rest(left, rest)
@@ -205,6 +211,13 @@ defmodule Alchemoo.Parser.Expression do
     end
   end
 
+  defp parse_multiplicative_rest(left, ["^" | rest]) do
+    with {:ok, right, rest} <- parse_primary(rest) do
+      node = %AST.BinOp{op: :^, left: left, right: right}
+      parse_multiplicative_rest(node, rest)
+    end
+  end
+
   defp parse_multiplicative_rest(left, rest), do: {:ok, left, rest}
 
   # Primary expressions: literals, variables, parentheses, splice
@@ -219,11 +232,11 @@ defmodule Alchemoo.Parser.Expression do
       [name | rest] ->
         case Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, name) do
           true -> handle_system_call_or_prop(name, rest)
-          false -> {:error, {:expected_identifier_after_dollar, name}}
+          false -> parse_suffix(%AST.Var{name: "$"}, [name | rest])
         end
 
       [] ->
-        {:error, :unexpected_end_after_dollar}
+        parse_suffix(%AST.Var{name: "$"}, [])
     end
   end
 
@@ -253,6 +266,16 @@ defmodule Alchemoo.Parser.Expression do
 
   defp parse_primary([token | rest]) do
     cond do
+      Regex.match?(~r/^-?(?:\d+\.\d*|\.\d+)(?:[eE][+-]?\d+)?$/, token) ->
+        with {:ok, val} <- parse_float_literal(token) do
+          parse_suffix(%AST.Literal{value: {:float, val}}, rest)
+        end
+
+      Regex.match?(~r/^-?\d+[eE][+-]?\d+$/, token) ->
+        with {:ok, val} <- parse_float_literal(token) do
+          parse_suffix(%AST.Literal{value: {:float, val}}, rest)
+        end
+
       Regex.match?(~r/^-?\d+$/, token) ->
         parse_suffix(%AST.Literal{value: Value.num(String.to_integer(token))}, rest)
 
@@ -289,17 +312,35 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp parse_catch_codes(expr, tokens) do
-    # Can be 'ANY' or a list of codes
+    # Can be 'ANY' or one/many codes separated by commas
     case tokens do
       ["ANY" | rest] ->
         handle_catch_after_codes(expr, :ANY, rest)
 
       _ ->
-        with {:ok, codes, rest} <- parse_expr(tokens) do
+        with {:ok, first_code, rest} <- parse_expr(tokens),
+             {:ok, codes, rest} <- parse_more_catch_codes([first_code], rest) do
           handle_catch_after_codes(expr, codes, rest)
         end
     end
   end
+
+  defp parse_more_catch_codes([single], ["," | rest]) do
+    with {:ok, code, rest} <- parse_expr(rest) do
+      parse_more_catch_codes([code, single], rest)
+    end
+  end
+
+  defp parse_more_catch_codes(rev_codes, ["," | rest]) do
+    with {:ok, code, rest} <- parse_expr(rest) do
+      parse_more_catch_codes([code | rev_codes], rest)
+    end
+  end
+
+  defp parse_more_catch_codes([single], rest), do: {:ok, single, rest}
+
+  defp parse_more_catch_codes(rev_codes, rest),
+    do: {:ok, %AST.ListExpr{elements: Enum.reverse(rev_codes)}, rest}
 
   defp handle_catch_after_codes(expr, codes, tokens) do
     case tokens do
@@ -504,6 +545,13 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   # Unescape string literals
+  defp parse_float_literal(token) do
+    case Float.parse(token) do
+      {val, ""} -> {:ok, val}
+      _ -> {:error, {:invalid_float, token}}
+    end
+  end
+
   defp unescape_string(str) do
     str
     |> String.replace("\\n", "\n")

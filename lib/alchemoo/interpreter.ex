@@ -97,23 +97,14 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp do_eval(%AST.Index{expr: expr, index: index}, env) do
-    with {:ok, coll, env1} <- eval(expr, env),
-         {:ok, idx, env2} <- eval(index, env1) do
-      case Value.index(coll, idx) do
-        {:err, _} = err -> {:error, err}
-        val -> {:ok, val, env2}
-      end
+    with {:ok, coll, env1} <- eval(expr, env) do
+      with_dollar(env1, coll, &eval_index_with_dollar(index, coll, &1))
     end
   end
 
   defp do_eval(%AST.Range{expr: expr, start: start_expr, end: end_expr}, env) do
-    with {:ok, coll, env1} <- eval(expr, env),
-         {:ok, {:num, start_idx}, env2} <- eval(start_expr, env1),
-         {:ok, {:num, end_idx}, env3} <- eval(end_expr, env2) do
-      case Value.range(coll, start_idx, end_idx) do
-        {:err, _} = err -> {:error, err}
-        val -> {:ok, val, env3}
-      end
+    with {:ok, coll, env1} <- eval(expr, env) do
+      with_dollar(env1, coll, &eval_range_with_dollar(start_expr, end_expr, coll, &1))
     end
   end
 
@@ -179,6 +170,27 @@ defmodule Alchemoo.Interpreter do
     end
   end
 
+  defp do_eval(
+         %AST.For{
+           var: var,
+           range: %AST.Range{expr: nil, start: start_expr, end: end_expr},
+           body: body
+         },
+         env
+       ) do
+    with {:ok, {:num, start_idx}, env1} <- eval(start_expr, env),
+         {:ok, {:num, end_idx}, env2} <- eval(end_expr, env1) do
+      items =
+        if start_idx <= end_idx do
+          Enum.map(start_idx..end_idx, &Value.num/1)
+        else
+          []
+        end
+
+      eval_for_list(var, items, body, env2)
+    end
+  end
+
   defp do_eval(%AST.For{var: var, range: range_expr, body: body}, env) do
     with {:ok, range, env1} <- eval(range_expr, env) do
       items =
@@ -238,6 +250,47 @@ defmodule Alchemoo.Interpreter do
       {:ok, {:str, name}, new_env} -> {:ok, name, new_env}
       {:ok, _, _} -> {:error, Value.err(:E_TYPE)}
       err -> err
+    end
+  end
+
+  defp with_dollar(env, coll, fun) do
+    dollar_val =
+      case Value.length(coll) do
+        {:num, _} = len -> len
+        {:err, _} = err -> err
+      end
+
+    prior = Map.get(env, "$", :__missing__)
+    env_with_dollar = Map.put(env, "$", dollar_val)
+
+    case fun.(env_with_dollar) do
+      {:ok, val, env_after} ->
+        {:ok, val, restore_dollar(env_after, prior)}
+
+      {:error, _} = err ->
+        err
+    end
+  end
+
+  defp restore_dollar(env, :__missing__), do: Map.delete(env, "$")
+  defp restore_dollar(env, prior), do: Map.put(env, "$", prior)
+
+  defp eval_index_with_dollar(index_expr, coll, env_with_dollar) do
+    with {:ok, idx, env2} <- eval(index_expr, env_with_dollar) do
+      case Value.index(coll, idx) do
+        {:err, _} = err -> {:error, err}
+        val -> {:ok, val, env2}
+      end
+    end
+  end
+
+  defp eval_range_with_dollar(start_expr, end_expr, coll, env_with_dollar) do
+    with {:ok, {:num, start_idx}, env2} <- eval(start_expr, env_with_dollar),
+         {:ok, {:num, end_idx}, env3} <- eval(end_expr, env2) do
+      case Value.range(coll, start_idx, end_idx) do
+        {:err, _} = err -> {:error, err}
+        val -> {:ok, val, env3}
+      end
     end
   end
 
@@ -541,6 +594,14 @@ defmodule Alchemoo.Interpreter do
   defp eval_binop(:%, {:num, _}, {:num, 0}), do: {:error, Value.err(:E_DIV)}
   defp eval_binop(:%, {:num, a}, {:num, b}), do: {:ok, Value.num(rem(a, b))}
 
+  defp eval_binop(:^, {:num, a}, {:num, b}) when b >= 0 do
+    {:ok, Value.num(round(:math.pow(a, b)))}
+  end
+
+  defp eval_binop(:^, {:num, a}, {:float, b}), do: {:ok, {:float, :math.pow(a, b)}}
+  defp eval_binop(:^, {:float, a}, {:num, b}), do: {:ok, {:float, :math.pow(a, b)}}
+  defp eval_binop(:^, {:float, a}, {:float, b}), do: {:ok, {:float, :math.pow(a, b)}}
+
   defp eval_binop(:in, val, {:list, items}) do
     case Enum.any?(items, &Value.equal?(&1, val)) do
       true -> {:ok, Value.num(1)}
@@ -623,6 +684,7 @@ defmodule Alchemoo.Interpreter do
   defp eval_binop(_op, _a, _b), do: {:error, Value.err(:E_TYPE)}
 
   defp eval_unop(:-, {:num, n}), do: {:ok, Value.num(-n)}
+  defp eval_unop(:-, {:float, n}), do: {:ok, {:float, -n}}
 
   defp eval_unop(:!, val) do
     case Value.truthy?(val) do

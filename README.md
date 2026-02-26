@@ -39,7 +39,7 @@ Alchemoo is now a functional MOO server that can:
 mix deps.get
 
 # Load a MOO database (optional)
-# Place your .db file in tmp/
+# Place your .db file in ${XDG_STATE_HOME:-$HOME/.local/state}/alchemoo/
 
 # Start the server
 mix run --no-halt
@@ -87,7 +87,7 @@ config :alchemoo, :moo_name, "MyMOO"
 config :alchemoo, :welcome_text, "Welcome to our world!"
 
 # CONFIG: Base directory for persistent data
-config :alchemoo, :base_dir, "tmp"
+config :alchemoo, :base_dir, Path.join(System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state"), "alchemoo")
 
 # CONFIG: Checkpoint settings
 config :alchemoo, :checkpoint,

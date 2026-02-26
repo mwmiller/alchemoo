@@ -14,7 +14,9 @@ IO.puts("✓ Database Server started\n")
 
 # Load database
 IO.puts("Loading LambdaCore database...")
-{:ok, count} = Server.load("tmp/LambdaCore-12Apr99.db")
+state_home = System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state")
+db_path = Path.join([state_home, "alchemoo", "LambdaCore-12Apr99.db"])
+{:ok, count} = Server.load(db_path)
 IO.puts("✓ Loaded #{count} objects\n")
 
 # Get stats

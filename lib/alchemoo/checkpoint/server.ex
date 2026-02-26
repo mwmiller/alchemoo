@@ -8,7 +8,7 @@ defmodule Alchemoo.Checkpoint.Server do
   config :alchemoo,
     checkpoint: %{
       # Where to store checkpoints
-      dir: "/var/lib/alchemoo/checkpoints",
+      dir: "$XDG_STATE_HOME/alchemoo/checkpoints",
       
       # Which checkpoint to load on startup
       # Options: :latest, :none, or specific filename
@@ -32,8 +32,6 @@ defmodule Alchemoo.Checkpoint.Server do
   alias Alchemoo.Database.Writer
 
   # CONFIG: Should be extracted to config
-  # CONFIG: :alchemoo, :base_dir
-  @default_base_dir "tmp"
   # CONFIG: :alchemoo, :checkpoint, :dir
   @default_checkpoint_dir "checkpoints"
   # 307 seconds (prime) # CONFIG: :alchemoo, :checkpoint, :interval
@@ -109,7 +107,7 @@ defmodule Alchemoo.Checkpoint.Server do
 
   defp build_initial_state(opts) do
     config = Application.get_env(:alchemoo, :checkpoint, [])
-    base_dir = Application.get_env(:alchemoo, :base_dir, @default_base_dir)
+    base_dir = Application.get_env(:alchemoo, :base_dir, default_base_dir())
 
     %__MODULE__{
       checkpoint_dir:
@@ -140,6 +138,13 @@ defmodule Alchemoo.Checkpoint.Server do
           @keep_last_moo_exports
         )
     }
+  end
+
+  defp default_base_dir do
+    state_home =
+      System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state")
+
+    Path.join(state_home, "alchemoo")
   end
 
   defp fetch_config(opts, config, key, config_key, default) do
@@ -258,6 +263,9 @@ defmodule Alchemoo.Checkpoint.Server do
   defp do_checkpoint(state) do
     start_time = System.monotonic_time(:millisecond)
 
+    # Ensure directory still exists (tests or external cleanup may remove it after init)
+    File.mkdir_p!(state.checkpoint_dir)
+
     # Get database snapshot
     db = Server.get_snapshot()
     stats = Server.stats()
@@ -269,7 +277,7 @@ defmodule Alchemoo.Checkpoint.Server do
     # Generate filename with timestamp
     timestamp = DateTime.utc_now() |> DateTime.to_iso8601(:basic)
     filename = "checkpoint-#{timestamp}.etf"
-    temp_path = Path.join(state.checkpoint_dir, "#{filename}.tmp")
+    temp_path = Path.join(state.checkpoint_dir, "#{filename}.part")
     final_path = Path.join(state.checkpoint_dir, filename)
 
     # Serialize database

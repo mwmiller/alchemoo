@@ -12,6 +12,7 @@ defmodule Alchemoo.Value do
 
   @type moo_value ::
           {:num, integer()}
+          | {:float, float()}
           | {:obj, integer()}
           | {:str, String.t()}
           | {:err, atom()}
@@ -66,6 +67,7 @@ defmodule Alchemoo.Value do
   Convert MOO value to Elixir value.
   """
   def to_elixir({:num, n}), do: n
+  def to_elixir({:float, n}), do: n
   def to_elixir({:obj, n}), do: n
   def to_elixir({:str, s}), do: s
   def to_elixir({:err, e}), do: {:error, e}
@@ -75,6 +77,7 @@ defmodule Alchemoo.Value do
   Get the type of a MOO value.
   """
   def typeof({:num, _}), do: :num
+  def typeof({:float, _}), do: :float
   def typeof({:obj, _}), do: :obj
   def typeof({:str, _}), do: :str
   def typeof({:err, _}), do: :err
@@ -200,6 +203,7 @@ defmodule Alchemoo.Value do
   Convert value to string representation.
   """
   def to_literal({:num, n}), do: Integer.to_string(n)
+  def to_literal({:float, n}), do: :erlang.float_to_binary(n, [:compact])
   def to_literal({:obj, n}), do: "##{n}"
   def to_literal({:str, s}), do: s
   def to_literal({:err, e}), do: Atom.to_string(e)

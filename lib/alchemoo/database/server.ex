@@ -135,27 +135,13 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def init(opts) do
-    # Check for core database if no path provided
-    db_path =
+    core_db_path =
       case Keyword.get(opts, :core_db) do
         nil -> Application.get_env(:alchemoo, :core_db)
         opt_db -> opt_db
       end
 
-    db =
-      case db_path && File.read(db_path) do
-        {:ok, content} ->
-          Logger.info("Loading database from #{db_path}")
-
-          case Database.Parser.parse(content) do
-            {:ok, db} -> db
-            _ -> %Database{}
-          end
-
-        _ ->
-          Logger.info("Starting with empty database")
-          %Database{}
-      end
+    {db, db_path} = load_startup_db(opts, core_db_path)
 
     {:ok, %__MODULE__{db: db, db_path: db_path}}
   end
@@ -179,15 +165,9 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def handle_call({:load, path}, _from, state) do
-    case File.read(path) do
-      {:ok, content} ->
-        case Database.Parser.parse(content) do
-          {:ok, db} ->
-            {:reply, {:ok, map_size(db.objects)}, %{state | db: db, db_path: path}}
-
-          {:error, reason} ->
-            {:reply, {:error, reason}, state}
-        end
+    case load_database_file(path) do
+      {:ok, db, count} ->
+        {:reply, {:ok, count}, %{state | db: db, db_path: path}}
 
       {:error, reason} ->
         {:reply, {:error, reason}, state}
@@ -491,6 +471,149 @@ defmodule Alchemoo.Database.Server do
   end
 
   ## Private Helpers
+
+  defp load_startup_db(opts, core_db_path) do
+    checkpoint_config = Application.get_env(:alchemoo, :checkpoint, [])
+
+    load_on_startup =
+      Keyword.get(opts, :load_on_startup, checkpoint_config[:load_on_startup] || :latest)
+
+    checkpoint_dir =
+      Keyword.get(opts, :checkpoint_dir) ||
+        checkpoint_config[:dir] ||
+        Path.join(default_base_dir(), "checkpoints")
+
+    candidates =
+      startup_candidates(load_on_startup, checkpoint_dir, core_db_path)
+
+    case load_first_available(candidates) do
+      {:ok, db, loaded_path, count} ->
+        Logger.info("Startup database loaded from #{loaded_path} (#{count} objects)")
+        {db, loaded_path}
+
+      {:error, attempts} ->
+        log_startup_failures(attempts)
+        Logger.info("Starting with empty database")
+        {%Database{}, nil}
+    end
+  end
+
+  defp default_base_dir do
+    state_home =
+      System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state")
+
+    Path.join(state_home, "alchemoo")
+  end
+
+  defp startup_candidates(load_on_startup, checkpoint_dir, core_db_path) do
+    checkpoint_paths =
+      case load_on_startup do
+        :none ->
+          []
+
+        :latest ->
+          checkpoint_files(checkpoint_dir)
+          |> Enum.map(&Path.join(checkpoint_dir, &1))
+
+        filename when is_binary(filename) ->
+          files = checkpoint_files(checkpoint_dir)
+
+          preferred = Path.join(checkpoint_dir, filename)
+
+          remaining =
+            files
+            |> Enum.reject(&(&1 == filename))
+            |> Enum.map(&Path.join(checkpoint_dir, &1))
+
+          [preferred | remaining]
+
+        _ ->
+          checkpoint_files(checkpoint_dir)
+          |> Enum.map(&Path.join(checkpoint_dir, &1))
+      end
+
+    case core_db_path do
+      path when is_binary(path) and path != "" -> checkpoint_paths ++ [path]
+      _ -> checkpoint_paths
+    end
+  end
+
+  defp checkpoint_files(dir) do
+    case File.ls(dir) do
+      {:ok, files} ->
+        files
+        |> Enum.filter(fn file ->
+          String.starts_with?(file, "checkpoint-") and
+            (String.ends_with?(file, ".etf") or String.ends_with?(file, ".db"))
+        end)
+        |> Enum.sort(:desc)
+
+      {:error, _} ->
+        []
+    end
+  end
+
+  defp load_first_available(paths) do
+    Enum.reduce_while(paths, {:error, []}, fn path, {:error, rev_attempts} ->
+      case load_database_file(path) do
+        {:ok, db, count} ->
+          {:halt, {:ok, db, path, count}}
+
+        {:error, reason} ->
+          {:cont, {:error, [{path, reason} | rev_attempts]}}
+      end
+    end)
+    |> normalize_load_result()
+  end
+
+  defp normalize_load_result({:ok, _db, _path, _count} = ok), do: ok
+  defp normalize_load_result({:error, rev_attempts}), do: {:error, Enum.reverse(rev_attempts)}
+
+  defp log_startup_failures([]), do: :ok
+
+  defp log_startup_failures(attempts) do
+    Enum.each(attempts, fn {path, reason} ->
+      Logger.warning("Startup load failed for #{path}: #{inspect(reason)}")
+    end)
+  end
+
+  defp load_database_file(path) do
+    with {:ok, content} <- File.read(path) do
+      parse_database_content(path, content)
+    end
+  end
+
+  defp parse_database_content(path, content) do
+    case Path.extname(path) do
+      ".etf" ->
+        parse_etf(content)
+
+      ".db" ->
+        parse_moo(content)
+
+      _ ->
+        case parse_etf(content) do
+          {:ok, _, _} = ok -> ok
+          _ -> parse_moo(content)
+        end
+    end
+  end
+
+  defp parse_etf(content) do
+    case :erlang.binary_to_term(content, [:safe]) do
+      %Database{} = db -> {:ok, db, map_size(db.objects)}
+      _ -> {:error, :invalid_checkpoint_format}
+    end
+  rescue
+    _ -> {:error, :invalid_checkpoint_format}
+  end
+
+  defp parse_moo(content) do
+    case Database.Parser.parse(content) do
+      {:ok, db} -> {:ok, db, map_size(db.objects)}
+      {:error, reason} -> {:error, reason}
+    end
+  end
 
   defp get_obj(state, id) do
     case Map.get(state.db.objects, id) do

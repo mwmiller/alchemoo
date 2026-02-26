@@ -9,23 +9,30 @@ defmodule Alchemoo.Parser.MOOSimple do
   alias Alchemoo.Parser.Expression
   alias Alchemoo.Value
 
-  @block_openers ["if ", "while ", "for ", "try"]
-  @block_closers ["endif", "endwhile", "endfor", "endtry"]
-
   @doc """
   Parse MOO verb code (list of lines) into AST.
   """
   def parse(lines) when is_list(lines) do
-    lines
-    |> Enum.map(&String.trim/1)
-    |> Enum.reject(&(&1 == "" or String.starts_with?(&1, "//") or String.starts_with?(&1, "#")))
-    |> parse_statements([])
+    cleaned =
+      for line <- lines,
+          trimmed = String.trim(line),
+          not ignored_line?(trimmed) do
+        trimmed
+      end
+
+    parse_statements(cleaned, [])
   end
 
   def parse(code) when is_binary(code) do
     code
     |> String.split("\n")
     |> parse()
+  end
+
+  defp ignored_line?(trimmed) do
+    trimmed == "" or
+      String.starts_with?(trimmed, "//") or
+      (String.starts_with?(trimmed, "#") and not Regex.match?(~r/^#-?\d+/, trimmed))
   end
 
   defp parse_statements([], acc), do: {:ok, %AST.Block{statements: Enum.reverse(acc)}}
@@ -306,8 +313,8 @@ defmodule Alchemoo.Parser.MOOSimple do
   defp take_until([], _keywords, _depth, acc), do: {Enum.reverse(acc), []}
 
   defp take_until([line | rest], stop_keywords, depth, acc) do
-    is_opener = Enum.any?(@block_openers, &String.starts_with?(line, &1))
-    is_closer = Enum.any?(@block_closers, &String.starts_with?(line, &1))
+    is_opener = block_opener?(line)
+    is_closer = block_closer?(line)
     is_stop = Enum.any?(stop_keywords, &String.starts_with?(line, &1))
 
     cond do
@@ -323,5 +330,16 @@ defmodule Alchemoo.Parser.MOOSimple do
       true ->
         take_until(rest, stop_keywords, depth, [line | acc])
     end
+  end
+
+  defp block_opener?(line) do
+    line == "try" or
+      String.starts_with?(line, "if ") or
+      String.starts_with?(line, "while ") or
+      String.starts_with?(line, "for ")
+  end
+
+  defp block_closer?(line) do
+    line == "endif" or line == "endwhile" or line == "endfor" or line == "endtry"
   end
 end

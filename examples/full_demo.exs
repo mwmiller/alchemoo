@@ -48,7 +48,10 @@ IO.puts("DATABASE INTEGRATION")
 IO.puts(String.duplicate("=", 60))
 
 # Load a database
-case Alchemoo.Database.Parser.parse_file("tmp/LambdaCore-12Apr99.db") do
+state_home = System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state")
+db_path = Path.join([state_home, "alchemoo", "LambdaCore-12Apr99.db"])
+
+case Alchemoo.Database.Parser.parse_file(db_path) do
   {:ok, db} ->
     runtime = Runtime.new(db)
     

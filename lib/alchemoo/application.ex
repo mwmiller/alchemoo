@@ -10,6 +10,12 @@ defmodule Alchemoo.Application do
   def start(_type, _args) do
     Logger.info("Starting Alchemoo v#{Alchemoo.Version.version()}...")
 
+    with :ok <- ensure_base_dir() do
+      start_supervisor()
+    end
+  end
+
+  defp start_supervisor do
     children = [
       {Alchemoo.Database.Server, []},
       {Registry, keys: :unique, name: Alchemoo.TaskRegistry},
@@ -31,6 +37,19 @@ defmodule Alchemoo.Application do
       {:error, reason} ->
         Logger.error("Failed to start Alchemoo: #{inspect(reason)}")
         {:error, reason}
+    end
+  end
+
+  defp ensure_base_dir do
+    case Application.get_env(:alchemoo, :base_dir) do
+      path when is_binary(path) ->
+        case File.mkdir_p(path) do
+          :ok -> :ok
+          {:error, reason} -> {:error, {:base_dir_create_failed, path, reason}}
+        end
+
+      _ ->
+        :ok
     end
   end
 

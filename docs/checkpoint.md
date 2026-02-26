@@ -124,8 +124,8 @@ iex> Alchemoo.Checkpoint.Server.checkpoint()
 {:ok, "checkpoint-20240115T123045Z.db"}
 
 # Export to MOO format (for sharing)
-iex> Alchemoo.Checkpoint.Server.export_moo("tmp/my-world.db")
-{:ok, "tmp/my-world.db"}
+iex> Alchemoo.Checkpoint.Server.export_moo("$XDG_STATE_HOME/alchemoo/my-world.db")
+{:ok, "$XDG_STATE_HOME/alchemoo/my-world.db"}
 
 # In MOO code (future)
 dump_database()
@@ -351,7 +351,7 @@ This ensures no data loss when stopping the server gracefully.
 ```elixir
 config :alchemoo,
   checkpoint: %{
-    dir: "tmp/alchemoo/checkpoints",
+    dir: "$XDG_STATE_HOME/alchemoo/checkpoints",
     load_on_startup: :latest,
     interval: 60_000,  # 1 minute
     keep_last: 5,
@@ -375,7 +375,7 @@ config :alchemoo,
 ```elixir
 config :alchemoo,
   checkpoint: %{
-    dir: "tmp/alchemoo/test-checkpoints",
+    dir: "$XDG_STATE_HOME/alchemoo/test-checkpoints",
     load_on_startup: :none,  # Start fresh
     interval: :infinity,  # Manual only
     keep_last: 0,  # Keep all
@@ -420,7 +420,7 @@ Alchemoo supports two checkpoint formats:
 ## Atomic Writes
 
 Checkpoints use atomic file operations:
-1. Write to temporary file (`checkpoint-XXX.db.tmp`)
+1. Write to temporary file (`checkpoint-XXX.db.part`)
 2. Atomic rename to final name
 3. Never corrupts existing checkpoints
 

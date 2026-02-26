@@ -3,7 +3,7 @@ import Config
 config :logger, level: :warning
 
 config :alchemoo, :checkpoint,
-  dir: "tmp/checkpoints",
+  dir: "test/state/checkpoints",
   interval: 3600_000,
   keep_last: 10
 

@@ -24,6 +24,7 @@ defmodule Alchemoo.InterpreterTest do
 
   test "evaluates object references" do
     assert eval("#123") == {:ok, Value.obj(123)}
+    assert eval("#-1") == {:ok, Value.obj(-1)}
   end
 
   test "evaluates arithmetic" do
@@ -31,6 +32,7 @@ defmodule Alchemoo.InterpreterTest do
     assert eval("10 - 3") == {:ok, Value.num(7)}
     assert eval("4 * 5") == {:ok, Value.num(20)}
     assert eval("20 / 4") == {:ok, Value.num(5)}
+    assert eval("2 ^ 3") == {:ok, Value.num(8)}
   end
 
   test "evaluates complex expressions" do
@@ -71,5 +73,15 @@ defmodule Alchemoo.InterpreterTest do
   test "handles undefined variables" do
     {:ok, ast, _} = Expression.parse("undefined_var")
     assert Interpreter.eval(ast, %{}) == {:error, Value.err(:E_VARNF)}
+  end
+
+  test "supports dollar in range expressions" do
+    assert eval("\"hello\"[2..$]") == {:ok, Value.str("ello")}
+    assert eval("{1, 2, 3}[2..$]") == {:ok, Value.list([Value.num(2), Value.num(3)])}
+  end
+
+  test "supports dollar in index expressions" do
+    assert eval("\"hello\"[$]") == {:ok, Value.str("o")}
+    assert eval("{1, 2, 3}[$]") == {:ok, Value.num(3)}
   end
 end

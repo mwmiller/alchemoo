@@ -1,6 +1,7 @@
 defmodule Alchemoo.Database.ServerTest do
   use ExUnit.Case, async: false
 
+  alias Alchemoo.Checkpoint.Server, as: Checkpoint
   alias Alchemoo.Database.Server
 
   # Server is started by application, no setup needed
@@ -17,6 +18,14 @@ defmodule Alchemoo.Database.ServerTest do
       stats = Server.stats()
       assert stats.loaded == true
       assert stats.object_count == 95
+    end
+
+    test "loads ETF checkpoint database" do
+      assert {:ok, 95} = Server.load("test/fixtures/lambdacore.db")
+      assert {:ok, checkpoint_filename} = Checkpoint.checkpoint()
+
+      checkpoint_path = Path.join(Checkpoint.info().checkpoint_dir, checkpoint_filename)
+      assert {:ok, 95} = Server.load(checkpoint_path)
     end
   end
 
