@@ -203,6 +203,12 @@ defmodule Alchemoo.Value do
   def to_literal({:obj, n}), do: "##{n}"
   def to_literal({:str, s}), do: s
   def to_literal({:err, e}), do: Atom.to_string(e)
+  def to_literal(:clear), do: "<clear>"
+  def to_literal(:none), do: "<none>"
+
+  def to_literal({:spliced, {:list, items}}) do
+    "@" <> to_literal({:list, items})
+  end
 
   def to_literal({:list, items}) do
     "{" <> Enum.map_join(items, ", ", &to_literal/1) <> "}"

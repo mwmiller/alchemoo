@@ -8,7 +8,7 @@ defmodule Alchemoo.Connection.Handler do
 
   alias Alchemoo.Command.Executor
   alias Alchemoo.Database.Server, as: DB
-  alias Alchemoo.Task
+  alias Alchemoo.Task, as: MOOTask
   alias Alchemoo.TaskSupervisor
   alias Alchemoo.Value
 
@@ -32,6 +32,7 @@ defmodule Alchemoo.Connection.Handler do
       "output-delimiters" => ["", ""]
     },
     waiting_tasks: [],
+    active_task: nil,
     state: :connected
   ]
 
@@ -89,22 +90,18 @@ defmodule Alchemoo.Connection.Handler do
 
         Logger.info("New connection from #{peer_info} assigned ID #{conn_id}")
 
-        # Trigger initial null do_login_command (no arguments)
-        case run_login_task(conn, "", []) do
-          {:ok, {:obj, player_id}, new_conn} when player_id >= 0 ->
-            finalize_login(new_conn, player_id)
-
-          {:ok, _, new_conn} ->
-            {:ok, new_conn}
-
-          {:error, reason, new_conn} ->
-            Logger.error("Initial login task failed: #{inspect(reason)}")
-            {:ok, new_conn}
-        end
+        {:ok, conn, {:continue, :initial_login}}
 
       {:error, _reason} ->
         {:stop, :normal}
     end
+  end
+
+  @impl true
+  def handle_continue(:initial_login, conn) do
+    # Trigger initial null do_login_command (no arguments)
+    new_conn = run_login_task(conn, "", [])
+    {:noreply, new_conn}
   end
 
   @impl true
@@ -178,6 +175,7 @@ defmodule Alchemoo.Connection.Handler do
 
   @impl true
   def handle_call(:get_output_delimiters, _from, conn), do: {:reply, conn.output_delimiters, conn}
+
   @impl true
   def handle_call(:get_connection_options, _from, conn),
     do: {:reply, Map.keys(conn.connection_options), conn}
@@ -185,6 +183,45 @@ defmodule Alchemoo.Connection.Handler do
   @impl true
   def handle_call({:get_connection_option, name}, _from, conn),
     do: {:reply, Map.get(conn.connection_options, name), conn}
+
+  @impl true
+  def handle_info({:task_output, text}, conn) do
+    {:noreply, queue_output(conn, text)}
+  end
+
+  @impl true
+  def handle_info({ref, {:ok, result}}, %{active_task: %{ref: ref}} = conn) do
+    # Cleanup task monitor
+    Process.demonitor(ref, [:flush])
+    conn = %{conn | active_task: nil}
+
+    # Process result (check if login successful)
+    case result do
+      {:obj, player_id} when player_id >= 0 ->
+        new_conn = finalize_login(conn, player_id)
+        # Check if we have more input to process
+        {:noreply, process_buffered_input(new_conn)}
+
+      _ ->
+        {:noreply, process_buffered_input(conn)}
+    end
+  end
+
+  @impl true
+  def handle_info({ref, {:error, reason}}, %{active_task: %{ref: ref}} = conn) do
+    Process.demonitor(ref, [:flush])
+    Logger.error("Login task failed: #{inspect(reason)}")
+    {:noreply, %{conn | active_task: nil} |> process_buffered_input()}
+  end
+
+  @impl true
+  def handle_info({:DOWN, ref, :process, _pid, reason}, %{active_task: %{ref: ref}} = conn) do
+    if reason != :normal do
+      Logger.error("Login task crashed: #{inspect(reason)}")
+    end
+
+    {:noreply, %{conn | active_task: nil} |> process_buffered_input()}
+  end
 
   @impl true
   def handle_info({:tcp, socket, data}, %{socket: socket} = conn) do
@@ -199,7 +236,7 @@ defmodule Alchemoo.Connection.Handler do
   def handle_info({:tcp_closed, socket}, %{socket: socket} = conn) do
     if conn.player_id && conn.player_id >= 0 do
       Logger.info("Player ##{conn.player_id} disconnected")
-      Task.kill_player_tasks(conn.player_id)
+      MOOTask.kill_player_tasks(conn.player_id)
     else
       Logger.info("Connection closed (not logged in)")
     end
@@ -213,17 +250,12 @@ defmodule Alchemoo.Connection.Handler do
     {:stop, :normal, conn}
   end
 
-  @impl true
-  def handle_info({:task_output, text}, conn) do
-    {:noreply, queue_output(conn, text)}
-  end
-
   ## Private Helpers
 
   defp finalize_login(conn, player_id) do
     Logger.info("Connection #{conn.player_id} logged in as ##{player_id}")
     spawn_system_task("user_connected", [Value.obj(player_id)])
-    {:ok, %{conn | state: :logged_in, player_id: player_id}}
+    %{conn | state: :logged_in, player_id: player_id}
   end
 
   defp run_login_task(conn, argstr, args) do
@@ -245,6 +277,8 @@ defmodule Alchemoo.Connection.Handler do
           player: conn.player_id,
           this: 0,
           caller: -1,
+          perms: 2,
+          caller_perms: 2,
           args: Enum.map(args, &Value.str/1),
           handler_pid: self(),
           verb_name: "do_login_command"
@@ -252,13 +286,17 @@ defmodule Alchemoo.Connection.Handler do
 
         code = Enum.join(verb.code, "\n")
 
-        case Task.run(code, env, task_opts) do
-          {:ok, result} -> {:ok, result, conn}
-          {:error, reason} -> {:error, reason, conn}
-        end
+        # Start task asynchronously
+        task =
+          Task.async(fn ->
+            MOOTask.run(code, env, task_opts)
+          end)
+
+        %{conn | active_task: task}
 
       _ ->
-        {:error, :no_login_command, conn}
+        Logger.error("Verb #0:do_login_command not found")
+        conn
     end
   end
 
@@ -275,23 +313,22 @@ defmodule Alchemoo.Connection.Handler do
     end
   end
 
-  defp dispatch_input_by_state(%{state: :connected} = conn, line) do
-    words = String.split(line, " ", trim: true)
-
-    case run_login_task(conn, line, words) do
-      {:ok, {:obj, player_id}, new_conn} when player_id >= 0 ->
-        {:ok, final_conn} = finalize_login(new_conn, player_id)
-        final_conn
-
-      {:ok, _, new_conn} ->
-        new_conn
-
-      {:error, _, new_conn} ->
-        new_conn
+  defp dispatch_input_by_state(conn, line) do
+    if conn.active_task do
+      # Busy, buffer the line (it stays in input_buffer essentially)
+      # FUTURE: Better input queuing
+      conn
+    else
+      do_dispatch_input_by_state(conn, line)
     end
   end
 
-  defp dispatch_input_by_state(%{state: :logged_in} = conn, line) do
+  defp do_dispatch_input_by_state(%{state: :connected} = conn, line) do
+    words = String.split(line, " ", trim: true)
+    run_login_task(conn, line, words)
+  end
+
+  defp do_dispatch_input_by_state(%{state: :logged_in} = conn, line) do
     process_moo_command(conn, line)
   end
 
@@ -387,5 +424,12 @@ defmodule Alchemoo.Connection.Handler do
       do: {lines, ""},
       else:
         if(lines == [], do: {[], buffer}, else: {Enum.slice(lines, 0..-2//1), List.last(lines)})
+  end
+
+  defp process_buffered_input(conn) do
+    # For now, just continue - the next handle_info({:tcp, ...}) will handle it
+    # OR if we have lines in buffer, we should trigger process_input
+    # FUTURE: Support explicit input queuing
+    conn
   end
 end

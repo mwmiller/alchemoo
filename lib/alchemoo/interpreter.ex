@@ -1,9 +1,6 @@
 defmodule Alchemoo.Interpreter do
   @moduledoc """
   Simple tree-walking interpreter for MOO expressions.
-
-  This evaluates AST nodes directly. A production interpreter would
-  compile to bytecode first for better performance.
   """
 
   require Logger
@@ -12,29 +9,34 @@ defmodule Alchemoo.Interpreter do
 
   @doc """
   Evaluate a MOO expression AST with given environment.
-
-  Environment can include:
-  - Variable bindings (map of name => value)
-  - :runtime key with Alchemoo.Runtime struct for object access
-
-  ## Examples
-
-      iex> eval(%AST.Literal{value: {:num, 42}}, %{})
-      {:ok, {:num, 42}}
-
-      iex> eval(%AST.BinOp{op: :+, left: ..., right: ...}, %{})
-      {:ok, {:num, 3}}
   """
   def eval(ast, env \\ %{}) do
     consume_tick()
+    # Logger.debug("Eval: #{inspect(ast)}")
 
     case do_eval(ast, env) do
-      {:ok, val, new_env} -> {:ok, val, new_env}
-      {:ok, val} -> {:ok, val, env}
-      {:error, _} = err -> err
+      {:ok, val, new_env} ->
+        # Logger.debug("Eval Result: #{Value.to_literal(val)}")
+        {:ok, val, new_env}
+
+      {:ok, val} ->
+        # Logger.debug("Eval Result: #{Value.to_literal(val)}")
+        {:ok, val, env}
+
+      {:error, {:err, _} = err} ->
+        Logger.debug("MOO Error: #{inspect(err)} in #{inspect(ast)}")
+        {:error, err}
+
+      {:error, _} = err ->
+        err
     end
   rescue
-    e -> {:error, {:interpreter_error, e, __STACKTRACE__}}
+    e ->
+      Logger.error(
+        "Interpreter Crash: #{inspect(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
+      )
+
+      {:error, {:interpreter_error, e, __STACKTRACE__}}
   end
 
   defp consume_tick do
@@ -45,7 +47,7 @@ defmodule Alchemoo.Interpreter do
     end
   end
 
-  # --- do_eval clauses ---
+  # --- do_eval clauses (Grouped together) ---
 
   defp do_eval(%AST.Literal{value: val}, _env), do: {:ok, val}
 
@@ -125,31 +127,33 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp do_eval(%AST.FuncCall{name: name, args: arg_exprs}, env) do
-    Logger.debug("Interpreter: calling builtin #{name}()")
+    # Logger.debug("Interpreter: calling builtin #{name}()")
 
     with {:ok, arg_vals, env1} <- eval_args(arg_exprs, env) do
       Alchemoo.Builtins.call(name, arg_vals, env1)
     end
   end
 
-  defp do_eval(%AST.PropRef{obj: obj_expr, prop: prop_name}, env) do
-    with {:ok, obj_val, env1} <- eval(obj_expr, env) do
-      case Map.get(env1, :runtime) do
+  defp do_eval(%AST.PropRef{obj: obj_expr, prop: prop_expr}, env) do
+    with {:ok, obj_val, env1} <- eval(obj_expr, env),
+         {:ok, prop_name, env2} <- resolve_dynamic_name(prop_expr, env1) do
+      case Map.get(env2, :runtime) do
         nil -> {:error, Value.err(:E_PERM)}
         runtime -> Alchemoo.Runtime.get_property(runtime, obj_val, prop_name)
       end
     end
   end
 
-  defp do_eval(%AST.VerbCall{obj: obj_expr, verb: verb_name, args: arg_exprs}, env) do
+  defp do_eval(%AST.VerbCall{obj: obj_expr, verb: verb_expr, args: arg_exprs}, env) do
     with {:ok, obj_val, env1} <- eval(obj_expr, env),
-         {:ok, arg_vals, env2} <- eval_args(arg_exprs, env1) do
-      execute_verb_call(obj_val, verb_name, arg_vals, env2)
+         {:ok, verb_name, env2} <- resolve_dynamic_name(verb_expr, env1),
+         {:ok, arg_vals, env3} <- eval_args(arg_exprs, env2) do
+      execute_verb_call(obj_val, verb_name, arg_vals, env3)
     end
   end
 
   defp do_eval(%AST.Block{statements: stmts}, env) do
-    Logger.debug("Interpreter: entering block with #{length(stmts)} statements")
+    # Logger.debug("Interpreter: entering block with #{length(stmts)} statements")
     eval_block(stmts, env)
   end
 
@@ -213,9 +217,29 @@ defmodule Alchemoo.Interpreter do
     {:error, err} -> handle_exception(err, clauses, env)
   end
 
+  defp do_eval(%AST.Catch{expr: expr, codes: codes, default: default}, env) do
+    case eval(expr, env) do
+      {:ok, result, new_env} ->
+        {:ok, result, new_env}
+
+      {:error, err} ->
+        handle_catch_error(err, codes, default, env)
+    end
+  end
+
   defp do_eval(%AST.ExprStmt{expr: expr}, env), do: eval(expr, env)
 
   # --- Helper functions ---
+
+  defp resolve_dynamic_name(name, env) when is_binary(name), do: {:ok, name, env}
+
+  defp resolve_dynamic_name(name_expr, env) do
+    case eval(name_expr, env) do
+      {:ok, {:str, name}, new_env} -> {:ok, name, new_env}
+      {:ok, _, _} -> {:error, Value.err(:E_TYPE)}
+      err -> err
+    end
+  end
 
   defp eval_logical_and(left, right, env) do
     with {:ok, left_val, env1} <- eval(left, env) do
@@ -246,7 +270,7 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp execute_verb_call(obj_val, verb_name, arg_vals, env) do
-    Logger.debug("Interpreter: calling verb #{Value.to_literal(obj_val)}:#{verb_name}()")
+    # Logger.debug("Interpreter: calling verb #{Value.to_literal(obj_val)}:#{verb_name}()")
 
     case Map.get(env, :runtime) do
       nil ->
@@ -272,9 +296,10 @@ defmodule Alchemoo.Interpreter do
     {:ok, val, Map.put(env, name, val)}
   end
 
-  defp perform_assignment(%AST.PropRef{obj: obj_expr, prop: prop_name}, val, env) do
-    with {:ok, obj_val, env1} <- eval(obj_expr, env) do
-      perform_prop_assignment(obj_val, prop_name, val, env1)
+  defp perform_assignment(%AST.PropRef{obj: obj_expr, prop: prop_expr}, val, env) do
+    with {:ok, obj_val, env1} <- eval(obj_expr, env),
+         {:ok, prop_name, env2} <- resolve_dynamic_name(prop_expr, env1) do
+      perform_prop_assignment(obj_val, prop_name, val, env2)
     end
   end
 
@@ -307,6 +332,25 @@ defmodule Alchemoo.Interpreter do
 
     with {:ok, _, env} <- perform_assignment(target, Value.list(spliced_values), env) do
       destructure_list(rest_targets, remaining_values, env)
+    end
+  end
+
+  defp destructure_list(
+         [%AST.OptionalVar{name: name, default: default} | rest_targets],
+         values,
+         env
+       ) do
+    case values do
+      [val | rest_values] ->
+        # Have value, use it
+        with {:ok, _, env} <- perform_assignment(%AST.Var{name: name}, val, env) do
+          destructure_list(rest_targets, rest_values, env)
+        end
+
+      [] ->
+        # No value, use default
+        # Default to 0 if no default provided (MOO spec?)
+        assign_optional_default(name, default, rest_targets, env)
     end
   end
 
@@ -445,6 +489,42 @@ defmodule Alchemoo.Interpreter do
     |> case do
       {:ok, vals, final_env} -> {:ok, Enum.reverse(vals), final_env}
       error -> error
+    end
+  end
+
+  defp should_catch?(_err, :ANY, _env), do: true
+  defp should_catch?(_err, nil, _env), do: true
+
+  defp should_catch?(err, codes_expr, env) do
+    case eval(codes_expr, env) do
+      {:ok, {:list, items}, _} ->
+        Enum.any?(items, &Value.equal?(&1, err))
+
+      {:ok, item, _} ->
+        Value.equal?(item, err)
+
+      _ ->
+        false
+    end
+  end
+
+  defp handle_catch_error(err, codes, default, env) do
+    if should_catch?(err, codes, env) do
+      catch_default_result(default, err, env)
+    else
+      {:error, err}
+    end
+  end
+
+  defp catch_default_result(nil, err, env), do: {:ok, err, env}
+  defp catch_default_result(default, _err, env), do: eval(default, env)
+
+  defp assign_optional_default(name, default, rest_targets, env) do
+    default_val_expr = default || %AST.Literal{value: {:num, 0}}
+
+    with {:ok, val, env} <- eval(default_val_expr, env),
+         {:ok, _, env} <- perform_assignment(%AST.Var{name: name}, val, env) do
+      destructure_list(rest_targets, [], env)
     end
   end
 

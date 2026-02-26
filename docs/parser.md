@@ -2,25 +2,27 @@
 
 ## Overview
 
-The Alchemoo database parser successfully reads LambdaMOO Format Version 4 database files, extracting all objects, verbs, properties, and code.
+`Alchemoo.Database.Parser` currently parses LambdaMOO **Format Version 4** files and builds an in-memory `%Alchemoo.Database{}` with:
+- objects
+- verb metadata plus verb code blocks
+- local and inherited property values
+- parent/child/content relationship lists
 
 ## Format 4 Structure
 
-```
+```text
 ** LambdaMOO Database, Format Version 4 **
 <object_count>
 <verb_count>
 <dummy>
 <user_count>
-<dummy>
-<clocks>
-<queued>
-<suspended>
+<user ids...>
 
 # Object Definitions
 #<N>
 <name>
-<flags (can be empty line)>
+<handles>
+<flags>
 <owner>
 <location>
 <contents>
@@ -28,7 +30,6 @@ The Alchemoo database parser successfully reads LambdaMOO Format Version 4 datab
 <parent>
 <child>
 <sibling>
-<unknown field>
 <verb_count>
 <verb_name>
 <verb_owner>
@@ -38,7 +39,8 @@ The Alchemoo database parser successfully reads LambdaMOO Format Version 4 datab
 <property_count>
 <property_name>
 ...
-<property values and metadata>
+<property_value_count>
+<typed property values + owner/perms>
 
 # Verb Code Section
 #<objnum>:<verbnum>
@@ -48,51 +50,28 @@ The Alchemoo database parser successfully reads LambdaMOO Format Version 4 datab
 .
 ```
 
-## Implementation Details
+## Current Parser Flow
 
-### Key Challenges Solved
-
-1. **Unknown field after sibling** - Format 4 has an extra integer field after the sibling field
-2. **Property values** - Properties have extensive metadata after the names that must be skipped
-3. **Verb code separation** - Verb code is stored separately after all objects
-4. **Distinguishing markers** - Must differentiate between `#N` (object) and `#N:N` (verb code)
-
-### Parser Flow
-
-1. Parse header and metadata
-2. Parse N objects (structure only)
-3. Skip property values/metadata
-4. Parse verb code section
-5. Update objects with their verb code
-
-## Test Results
-
-Successfully parses LambdaCore-12Apr99.db:
-- 95 objects
-- 1,699 verbs
-- 1,697 verbs with code
-- All object relationships preserved
+1. Parse header and metadata (Format 4 only)
+2. Parse the declared object count
+3. Parse object structure, verb headers, and property names/values
+4. Parse trailing `#obj:verb` code blocks
+5. Build relationship lists (`children`, `contents`)
+6. Resolve inherited properties into `overridden_properties` and `all_properties`
 
 ## Usage
 
 ```elixir
-{:ok, db} = Alchemoo.Database.Parser.parse_file("LambdaCore.db")
+content = File.read!("LambdaCore.db")
+{:ok, db} = Alchemoo.Database.Parser.parse(content)
 
-# Access objects
 system = db.objects[0]
-
-# Access verbs
 [first_verb | _] = system.verbs
-IO.inspect(first_verb.code)
-
-# Access properties
 [first_prop | _] = system.properties
-IO.inspect(first_prop.name)
 ```
 
-## Next Steps
+## Notes / Limitations
 
-- [ ] Parse property values (currently skipped)
-- [ ] Support Format Version 1-3
-- [ ] Optimize for large databases
-- [ ] Add streaming parser for memory efficiency
+- `parse_file/1` is not currently exposed; use `File.read!/1` plus `parse/1`.
+- Float-typed DB values are currently represented as `{:float, raw_string}`.
+- Parser currently targets Format 4 only.

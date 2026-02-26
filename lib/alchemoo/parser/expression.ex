@@ -16,7 +16,7 @@ defmodule Alchemoo.Parser.Expression do
 
       iex> parse("42")
       {:ok, %AST.Literal{value: {:num, 42}}}
-      
+
       iex> parse("1 + 2")
       {:ok, %AST.BinOp{op: :+, left: %AST.Literal{...}, right: %AST.Literal{...}}}
   """
@@ -34,7 +34,7 @@ defmodule Alchemoo.Parser.Expression do
     # 4. Multi-char operators: == | != | <= | >= | && | || | ..
     # 5. Single-char symbols: [\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@\.]
     token_regex =
-      ~r/"(?:[^"\\]|\\.)*"|#[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*|-?[0-9]+|==|!=|<=|>=|&&|\|\||\.\.|\$|[\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@]/
+      ~r/"(?:[^"\\]|\\.)*"|#[0-9]+|[a-zA-Z_][a-zA-Z0-9_]*|-?[0-9]+|==|!=|<=|>=|&&|\|\||\.\.|=>|\$|[\(\)\{\}\[\]\+\-\*\/\,\;\:\.\?\|\=\<\>\!\&\@\`\']/
 
     Regex.scan(token_regex, input)
     |> Enum.map(fn [match] -> match end)
@@ -217,15 +217,18 @@ defmodule Alchemoo.Parser.Expression do
   defp parse_primary(["$" | rest]) do
     case rest do
       [name | rest] ->
-        if Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, name) do
-          handle_system_call_or_prop(name, rest)
-        else
-          {:error, {:expected_identifier_after_dollar, name}}
+        case Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, name) do
+          true -> handle_system_call_or_prop(name, rest)
+          false -> {:error, {:expected_identifier_after_dollar, name}}
         end
 
       [] ->
         {:error, :unexpected_end_after_dollar}
     end
+  end
+
+  defp parse_primary(["`" | rest]) do
+    handle_catch_expr(rest)
   end
 
   defp parse_primary([<<"\"", _::binary>> = token | rest]) do
@@ -265,16 +268,71 @@ defmodule Alchemoo.Parser.Expression do
     {:error, :unexpected_end}
   end
 
+  # --- Helper functions ---
+
+  defp handle_catch_expr(tokens) do
+    with {:ok, expr, rest} <- parse_expr(tokens) do
+      case rest do
+        ["!" | rest] ->
+          parse_catch_codes(expr, rest)
+
+        ["`" | rest] ->
+          parse_suffix(%AST.Catch{expr: expr, codes: nil, default: nil}, rest)
+
+        ["'" | rest] ->
+          parse_suffix(%AST.Catch{expr: expr, codes: nil, default: nil}, rest)
+
+        _ ->
+          {:error, :expected_bang_or_backtick}
+      end
+    end
+  end
+
+  defp parse_catch_codes(expr, tokens) do
+    # Can be 'ANY' or a list of codes
+    case tokens do
+      ["ANY" | rest] ->
+        handle_catch_after_codes(expr, :ANY, rest)
+
+      _ ->
+        with {:ok, codes, rest} <- parse_expr(tokens) do
+          handle_catch_after_codes(expr, codes, rest)
+        end
+    end
+  end
+
+  defp handle_catch_after_codes(expr, codes, tokens) do
+    case tokens do
+      ["=>" | rest] ->
+        case parse_expr(rest) do
+          {:ok, default, ["`" | rest]} ->
+            parse_suffix(%AST.Catch{expr: expr, codes: codes, default: default}, rest)
+
+          {:ok, default, ["'" | rest]} ->
+            parse_suffix(%AST.Catch{expr: expr, codes: codes, default: default}, rest)
+
+          _ ->
+            {:error, :expected_closing_backtick_or_quote}
+        end
+
+      ["`" | rest] ->
+        parse_suffix(%AST.Catch{expr: expr, codes: codes, default: nil}, rest)
+
+      ["'" | rest] ->
+        parse_suffix(%AST.Catch{expr: expr, codes: codes, default: nil}, rest)
+
+      _ ->
+        {:error, :expected_arrow_or_backtick}
+    end
+  end
+
   defp handle_paren_expr(tokens) do
     case parse_expr(tokens) do
       {:ok, expr, [")" | rest]} ->
         parse_suffix(expr, rest)
 
-      {:ok, _, _} ->
+      _ ->
         {:error, :expected_closing_paren}
-
-      err ->
-        err
     end
   end
 
@@ -319,8 +377,21 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   # Suffixes: .prop, :verb(), [idx], [start..end]
+  defp parse_suffix(node, [".", "(" | rest]) do
+    with {:ok, prop_expr, [")" | rest]} <- parse_expr(rest) do
+      parse_suffix(%AST.PropRef{obj: node, prop: prop_expr}, rest)
+    end
+  end
+
   defp parse_suffix(node, [".", prop_name | rest]) do
     parse_suffix(%AST.PropRef{obj: node, prop: prop_name}, rest)
+  end
+
+  defp parse_suffix(node, [":", "(" | rest]) do
+    with {:ok, verb_expr, [")", "(" | rest]} <- parse_expr(rest),
+         {:ok, args, rest} <- parse_func_args(rest, []) do
+      parse_suffix(%AST.VerbCall{obj: node, verb: verb_expr, args: args}, rest)
+    end
   end
 
   defp parse_suffix(node, [":", verb_name, "(" | rest]) do
@@ -347,11 +418,8 @@ defmodule Alchemoo.Parser.Expression do
       {:ok, index_expr, ["]" | rest]} ->
         parse_suffix(%AST.Index{expr: node, index: index_expr}, rest)
 
-      {:ok, _, _} ->
+      _ ->
         {:error, :expected_closing_bracket}
-
-      err ->
-        err
     end
   end
 
@@ -384,16 +452,54 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp parse_list_elements(tokens, acc) do
-    case parse_expr(tokens) do
-      {:ok, elem, rest} ->
-        case rest do
-          ["," | rest] -> parse_list_elements(rest, [elem | acc])
-          ["}" | _] = rest -> parse_list_elements(rest, [elem | acc])
-          _ -> {:error, :expected_comma_or_brace}
+    case tokens do
+      ["?" | rest] ->
+        parse_optional_list_element(rest, acc)
+
+      _ ->
+        case parse_expr(tokens) do
+          {:ok, elem, rest} ->
+            handle_list_element_rest(elem, rest, acc)
+
+          err ->
+            err
+        end
+    end
+  end
+
+  defp parse_optional_list_element([name | rest], acc) do
+    if Regex.match?(~r/^[a-zA-Z_][a-zA-Z0-9_]*$/, name) do
+      handle_optional_var(name, rest, acc)
+    else
+      {:error, {:expected_variable_after_question, name}}
+    end
+  end
+
+  defp parse_optional_list_element(_, _acc), do: {:error, :expected_variable_after_question}
+
+  defp handle_optional_var(name, tokens, acc) do
+    case tokens do
+      ["=" | rest] ->
+        case parse_expr(rest) do
+          {:ok, default, rest} ->
+            node = %AST.OptionalVar{name: name, default: default}
+            handle_list_element_rest(node, rest, acc)
+
+          err ->
+            err
         end
 
-      err ->
-        err
+      _ ->
+        node = %AST.OptionalVar{name: name, default: nil}
+        handle_list_element_rest(node, tokens, acc)
+    end
+  end
+
+  defp handle_list_element_rest(elem, rest, acc) do
+    case rest do
+      ["," | rest] -> parse_list_elements(rest, [elem | acc])
+      ["}" | _] = rest -> parse_list_elements(rest, [elem | acc])
+      _ -> {:error, :expected_comma_or_brace}
     end
   end
 

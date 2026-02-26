@@ -4,7 +4,7 @@ A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM 
 
 ## Features
 
-- ✅ **Full MOO Database Support** - Loads LambdaCore, JHCore, and other MOO databases (Format 1 & 4)
+- ✅ **Full MOO Database Support** - Loads LambdaCore, JHCore, and other MOO databases (Format 4)
 - ✅ **Complete MOO Language** - Parser and interpreter with all 5 value types
 - ✅ **Command Execution** - Full command parsing and verb execution pipeline
 - ✅ **Network Layer** - Telnet support (port 7777), SSH/WebSocket ready
@@ -18,7 +18,7 @@ A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM 
 
 ## Status
 
-**Working MOO Server!** 🎉
+**Working MOO Server**
 
 Alchemoo is now a functional MOO server that can:
 - Load existing MOO databases
@@ -29,7 +29,7 @@ Alchemoo is now a functional MOO server that can:
 - Handle multiple concurrent players
 - Automatically checkpoint and recover from crashes
 
-**Test Coverage:** 140 tests (100% passing)  
+**Current Test Status (this branch, Feb 26, 2026):** 125 tests, 8 failing  
 **Commits:** 70+
 
 ## Quick Start
@@ -67,12 +67,12 @@ Player (telnet) → Connection.Handler → Command.Parser → Command.Executor
 - **[Getting Started](docs/getting-started.md)** - Complete setup guide for new users
 - **[Project Summary](docs/PROJECT_SUMMARY.md)** - Comprehensive project overview
 - [Commands](docs/commands.md) - Command parsing and execution
-- [Tasks](docs/tasks.md) - Task system and tick quotas
+- [Implementation Status](docs/status.md) - Current capabilities and known issues
 - [Checkpoint System](docs/checkpoint.md) - Automatic saves and recovery
 - [Built-in Functions](docs/builtins-status.md) - Implementation status
 - [Unicode Support](docs/unicode.md) - UTF-8 and grapheme handling
 - [Network Configuration](docs/network-config.md) - Telnet/SSH/WebSocket setup
-- [Database](docs/database.md) - Database format and operations
+- [Database Parser](docs/parser.md) - Database format and parser behavior
 - [Ecosystem Guide](docs/ECOSYSTEM.md) - Overview of MOO cores and resources
 
 ## Configuration
@@ -132,7 +132,7 @@ elixir examples/task_demo.exs
 ## Roadmap
 
 ### Phase 1: Core Infrastructure ✅
-- [x] Database parser (Format 1 & 4)
+- [x] Database parser (Format 4)
 - [x] MOO language parser
 - [x] MOO interpreter
 - [x] Database server with ETS
@@ -157,7 +157,7 @@ elixir examples/task_demo.exs
 - [ ] Preposition validation
 - [ ] Configuration extraction
 - [ ] Performance optimization
-- [x] Fix flaky tests (100% passing)
+- [ ] Fix current test regressions
 - [ ] SSH support
 - [ ] WebSocket support
 

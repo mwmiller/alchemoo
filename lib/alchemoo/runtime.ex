@@ -7,6 +7,7 @@ defmodule Alchemoo.Runtime do
   require Logger
 
   alias Alchemoo.Database
+  alias Alchemoo.Database.Flags
   alias Alchemoo.Database.Server, as: DB
   alias Alchemoo.Database.Verb
   alias Alchemoo.Parser.MOOSimple
@@ -29,8 +30,22 @@ defmodule Alchemoo.Runtime do
   """
   def get_property(runtime, {:obj, obj_id}, prop_name) when is_binary(prop_name) do
     case Map.get(runtime.objects, obj_id) do
-      nil -> {:error, Value.err(:E_INVIND)}
-      object -> find_property(object, prop_name, runtime)
+      nil ->
+        Logger.debug("Property Lookup: ##{obj_id}.#{prop_name} -> E_INVIND")
+        {:error, Value.err(:E_INVIND)}
+
+      object ->
+        res = find_property(object, prop_name, runtime)
+
+        case res do
+          {:ok, val} ->
+            Logger.debug("Property Lookup: ##{obj_id}.#{prop_name} -> #{Value.to_literal(val)}")
+
+          {:error, err} ->
+            Logger.debug("Property Lookup: ##{obj_id}.#{prop_name} -> ERROR: #{inspect(err)}")
+        end
+
+        res
     end
   end
 
@@ -141,6 +156,13 @@ defmodule Alchemoo.Runtime do
     do: {:ok, {:list, Enum.map(object.contents, &Value.obj/1)}}
 
   defp lookup_builtin_property(object, "parent"), do: {:ok, {:obj, object.parent}}
+
+  defp lookup_builtin_property(object, "wizard"),
+    do: {:ok, Value.num(if Flags.set?(object.flags, Flags.wizard()), do: 1, else: 0)}
+
+  defp lookup_builtin_property(object, "programmer"),
+    do: {:ok, Value.num(if Flags.set?(object.flags, Flags.programmer()), do: 1, else: 0)}
+
   defp lookup_builtin_property(_object, _prop_name), do: :not_builtin
 
   defp lookup_parent_property(parent_id, prop_name, runtime) when parent_id >= 0 do
@@ -162,7 +184,8 @@ defmodule Alchemoo.Runtime do
 
       verb ->
         # Execute verb code - passing object.id as definer and original receiver as this
-        execute_verb(receiver_id, object.id, verb, args, env, runtime)
+        # Pass verb_name as the invoked name
+        execute_verb(receiver_id, object.id, verb, verb_name, args, env, runtime)
     end
   end
 
@@ -179,12 +202,12 @@ defmodule Alchemoo.Runtime do
   end
 
   # Execute verb code
-  defp execute_verb(this_id, definer_id, verb, args, env, runtime) do
+  defp execute_verb(this_id, definer_id, verb, invoked_name, args, env, runtime) do
     # Save current task context for restoration
     old_context = Process.get(:task_context)
 
     # Create new task context for this verb call
-    new_context = build_new_context(old_context, this_id, definer_id, verb)
+    new_context = build_new_context(old_context, this_id, definer_id, verb, invoked_name)
 
     Process.put(:task_context, new_context)
 
@@ -197,35 +220,35 @@ defmodule Alchemoo.Runtime do
     end
   end
 
-  defp build_new_context(nil, this_id, definer_id, verb) do
+  defp build_new_context(nil, this_id, definer_id, _verb, invoked_name) do
     # Default context for testing or initial calls
     %{
       this: this_id,
       player: 2,
       caller: -1,
       perms: 2,
-      caller_perms: 0,
+      caller_perms: 2,
       verb_definer: definer_id,
-      verb_name: verb.name,
+      verb_name: invoked_name,
       stack: []
     }
   end
 
-  defp build_new_context(context, this_id, definer_id, verb) do
+  defp build_new_context(context, this_id, definer_id, verb, invoked_name) do
     %{
       context
       | this: this_id,
         caller: context[:this] || -1,
-        caller_perms: context[:perms] || 0,
+        caller_perms: context[:perms] || 2,
         verb_definer: definer_id,
-        verb_name: verb.name,
+        verb_name: invoked_name,
         # MOO manual says verbs start with their owner's perms
         perms: verb.owner,
         stack: [
           %{
             this: context[:this] || -1,
             verb_name: context[:verb_name] || "(initial)",
-            verb_owner: context[:perms] || 0,
+            verb_owner: context[:perms] || 2,
             player: context[:player] || 2
           }
           | context[:stack] || []
@@ -290,14 +313,14 @@ defmodule Alchemoo.Runtime do
     end
   end
 
-  defp build_verb_env(env, runtime, args, this_id, verb_name, context) do
+  defp build_verb_env(env, runtime, args, this_id, _verb_name, context) do
     %{
       :runtime => runtime,
       "args" => Value.list(args),
       "this" => Value.obj(this_id),
       "player" => Value.obj(context[:player] || 2),
       "caller" => Value.obj(context[:caller] || -1),
-      "verb" => Value.str(verb_name),
+      "verb" => Value.str(context[:verb_name]),
       # Standard MOO type constants
       "INT" => Value.num(0),
       "NUM" => Value.num(0),

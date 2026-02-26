@@ -4,17 +4,17 @@
 
 Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM VM. It successfully loads and executes existing MOO databases with full Unicode support, automatic checkpointing, and a complete command execution pipeline.
 
-## Status: Working MOO Server! 🎉
+## Status: Working MOO Server
 
 **Commits:** 80+  
-**Tests:** 140 (100% passing)  
+**Current branch tests (Feb 26, 2026):** 125 tests, 8 failing  
 **Lines of Code:** ~7,000  
 **Development Time:** Phase 2 (Built-ins) Complete (100%)
 
 ## What Works
 
 ### Core Infrastructure (100%)
-- ✅ Database parser (Format 4+)
+- ✅ Database parser (Format 4)
 - ✅ MOO language parser and interpreter
 - ✅ Database server with ETS storage
 - ✅ Task system with tick quotas and process isolation
@@ -72,7 +72,10 @@ User (telnet) → Ranch TCP → Connection.Handler (GenServer)
 ### Known Issues
 - `listen`, `unlisten`, and `open_network_connection` currently return `E_PERM` (placeholders).
 - `disassemble` returns source code instead of bytecode (valid for AST interpreter but worth noting).
+- `Alchemoo.Database.Parser.parse_file/1` is currently missing (tests still call it).
+- MOO export currently fails on `{:float, "..."}`
+- `verb_args()` has a current regression in built-ins tests.
 
 ---
 
-**This summary is current as of Feb 24, 2026 (v0.2.0).**
+**This summary is current as of Feb 26, 2026.**

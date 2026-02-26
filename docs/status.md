@@ -3,7 +3,7 @@
 ## ✅ Completed Features
 
 ### Database Parser (100%)
-- **Format Support**: Format 4 (Standard LambdaMOO). Note: Versions older than Format 4 (as used by LambdaCore) are not a priority.
+- **Format Support**: Format 4 (Standard LambdaMOO)
 - **Databases Tested**:
   - LambdaCore: 95 objects, 1,699 verbs (99.9% code coverage)
   - JHCore: 236 objects, 2,722 verbs (100% code coverage)
@@ -33,6 +33,11 @@
   - Splicing: @
   - Ranges: [start..end]
 - **Assignment Expressions**: a = b
+- **Dynamic dispatch syntax**:
+  - Dynamic property refs: `obj.(expr)`
+  - Dynamic verb calls: `obj:(expr)(args...)`
+- **Catch expressions**: `` `expr ! codes => default' ``
+- **Optional list destructuring vars**: `{a, ?b, ?c=10} = list`
 - **Operator precedence**
 
 ### Interpreter (100%)
@@ -75,8 +80,7 @@ All standard categories are complete:
 
 ## 📊 Test Coverage
 
-- **Total Tests**: 140
-- **Passing**: 100%
+- **Current branch status (Feb 26, 2026)**: `mix test` reports 125 tests with 8 failures
 - **Coverage Areas**:
   - Value operations (10 tests)
   - Expression evaluation (20 tests)
@@ -84,6 +88,12 @@ All standard categories are complete:
   - Database parsing (10 tests)
   - Task system (20 tests)
   - Command execution (20 tests)
+
+## ⚠️ Known Regressions (Current Branch)
+
+- `Alchemoo.Database.Parser.parse_file/1` is missing; tests still call it.
+- MOO export fails when serializing `{:float, "..."}`
+- `verb_args()` currently raises a `CaseClauseError` in one built-ins test.
 
 ## 📈 Progress Metrics
 
@@ -95,4 +105,4 @@ All standard categories are complete:
 
 ---
 
-**This documentation is up to date as of Feb 24, 2026 (v0.2.0).**
+**This documentation is up to date as of Feb 26, 2026.**

@@ -140,4 +140,14 @@ defmodule Alchemoo.AST do
     @moduledoc false
     defstruct [:error_var, :body]
   end
+
+  defmodule Catch do
+    @moduledoc false
+    defstruct [:expr, :codes, :default]
+  end
+
+  defmodule OptionalVar do
+    @moduledoc false
+    defstruct [:name, :default]
+  end
 end

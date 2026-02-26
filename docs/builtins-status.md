@@ -4,7 +4,7 @@
 
 - **Total MOO Built-ins:** 140+
 - **Implemented:** 140
-- **Status:** 100% Complete! ✅
+- **Status:** Implemented, with one known regression in current tests (`verb_args`)
 - **Critical for basic functionality:** Complete! ✅
 - **Important for advanced functionality:** Complete! ✅
 
@@ -185,4 +185,4 @@
 
 ---
 
-**This documentation is up to date as of Feb 24, 2026.**
+**This documentation is up to date as of Feb 26, 2026.**

@@ -110,6 +110,8 @@ defmodule Alchemoo.Database.Writer do
       {:str, s} -> "2\n#{s}"
       {:err, e} -> "3\n#{error_to_code(e)}"
       {:list, items} -> "4\n#{length(items)}\n#{Enum.map_join(items, "\n", &serialize_value/1)}"
+      {:float, s} when is_binary(s) -> "9\n#{s}"
+      {:float, f} when is_float(f) -> "9\n#{f}"
       # Should not happen in export
       :clear -> "0\n0"
     end

@@ -1,126 +1,48 @@
 defmodule Alchemoo.Database.Parser do
   @moduledoc """
-  Parses LambdaMOO database files (prioritizing Format Version 4).
-
-  The database format consists of:
-  1. Header with version and metadata
-  2. Object definitions (structure, verb names, property names)
-  3. Verb code sections (#objnum:verbnum)
-  4. Footer with clocks and queued tasks
-
-  Note: Versions older than Format 4 (as used by LambdaCore) are not a priority.
+  Parses LambdaMOO database files (Format Version 4).
   """
   require Logger
-  import Bitwise
+  require Bitwise
 
   alias Alchemoo.Database
   alias Alchemoo.Database.{Object, Property, Verb}
   alias Alchemoo.Value
 
-  @doc """
-  Parses a LambdaMOO database file.
-
-  ## Examples
-
-      iex> Alchemoo.Database.Parser.parse_file("Minimal.db")
-      {:ok, %Alchemoo.Database{}}
-  """
   def parse_file(path) do
     with {:ok, content} <- File.read(path) do
       parse(content)
     end
   end
 
-  @doc """
-  Parses LambdaMOO database content from a string.
-  """
   def parse(content) do
     lines = String.split(content, ~r/\r?\n/)
-
     do_parse(lines)
   end
 
   defp do_parse(lines) do
     with {:ok, version, lines} <- parse_header(lines),
          {:ok, metadata, lines} <- parse_metadata(lines, version),
-         {:ok, objects, lines} <- parse_objects(lines, metadata),
-         {:ok, objects_with_code} <- parse_verb_code(lines, objects) do
-      # Post-process: convert linked lists to Elixir lists AND resolve inherited property names
-      objects_with_lists = build_relationship_lists(objects_with_code)
-      objects_final = resolve_all_properties(objects_with_lists)
+         {:ok, objects, lines} <- parse_objects(lines, metadata.object_count, version),
+         {:ok, objects} <- parse_verb_code(lines, objects) do
+      # Track max_object from the actual parsed IDs
+      max_id = Map.keys(objects) |> Enum.max(fn -> -1 end)
+
+      # Post-process to build full property maps
+      objects = build_relationship_lists(objects)
+      objects = resolve_properties(objects)
 
       {:ok,
        %Database{
          version: version,
          object_count: metadata.object_count,
-         clock: metadata.clock,
-         objects: objects_final,
-         max_object: Enum.max(Map.keys(objects_final), fn -> -1 end)
+         clock: 0,
+         objects: objects,
+         max_object: max_id
        }}
     end
   end
 
-  defp build_relationship_lists(objects) do
-    # For each object, follow the sibling/next chains to build children/contents lists
-    Enum.into(objects, %{}, fn {id, obj} ->
-      {id,
-       %{
-         obj
-         | children: collect_chain(objects, obj.first_child_id, :sibling_id),
-           contents: collect_chain(objects, obj.first_content_id, :next_id)
-       }}
-    end)
-  end
-
-  defp collect_chain(_objects, -1, _field), do: []
-
-  defp collect_chain(objects, id, field) do
-    case Map.get(objects, id) do
-      nil ->
-        []
-
-      obj ->
-        [id | collect_chain(objects, Map.get(obj, field), field)]
-    end
-  end
-
-  defp resolve_all_properties(objects) do
-    # For each object, inherited values are stored as a list in temp_inherited_values.
-    # We need to map them to actual property names from ancestors.
-    Enum.into(objects, %{}, fn {id, obj} ->
-      {id, resolve_obj_properties(obj, objects)}
-    end)
-  end
-
-  defp resolve_obj_properties(obj, objects) do
-    # Get inherited names from ancestors
-    inherited_names = get_inherited_property_names(obj.parent, objects)
-
-    # Map inherited values to names
-    overridden =
-      Enum.zip(inherited_names, Map.get(obj, :temp_inherited_values, []) || [])
-      |> Enum.into(%{}, fn {name, {value, owner, perms}} ->
-        {name, %Property{name: name, value: value, owner: owner, perms: perms}}
-      end)
-
-    %{obj | overridden_properties: overridden}
-  end
-
-  defp get_inherited_property_names(-1, _objects), do: []
-
-  defp get_inherited_property_names(parent_id, objects) do
-    case Map.get(objects, parent_id) do
-      nil ->
-        []
-
-      parent ->
-        # Names from ancestors + local names of this parent
-        get_inherited_property_names(parent.parent, objects) ++
-          Enum.map(parent.properties, & &1.name)
-    end
-  end
-
-  # Parse header: "** LambdaMOO Database, Format Version N **"
   defp parse_header([line | rest]) do
     case Regex.run(~r/Format Version (\d+)/, line) do
       [_, version] -> {:ok, String.to_integer(version), rest}
@@ -128,323 +50,204 @@ defmodule Alchemoo.Database.Parser do
     end
   end
 
-  # Parse metadata based on version
   defp parse_metadata(lines, version) when version >= 4 do
-    # Format 4:
-    # 1. object_count
-    # 2. verb_count
-    # 3. dummy
-    # 4. user_count
-    # 5. users (user_count lines)
-
-    with [obj_count_str | rest] <- lines,
-         {object_count, _} <- Integer.parse(obj_count_str),
-         [_verb_count | rest] <- rest,
-         [_dummy1 | rest] <- rest,
-         [user_count_str | rest] <- rest,
+    with [obj_count_str, _verb_count, _dummy, user_count_str | rest] <- lines,
+         {obj_count, _} <- Integer.parse(obj_count_str),
          {user_count, _} <- Integer.parse(user_count_str) do
-      # Skip user IDs
       rest = Enum.drop(rest, user_count)
-      # Sometimes there's more metadata (numbers) until #0
+      # Format 4 metadata can have more numbers until #0
       rest = skip_to_first_object(rest)
-
-      {:ok, %{object_count: object_count, clock: 0, version: version}, rest}
+      {:ok, %{object_count: obj_count, version: version}, rest}
     else
       _ -> {:error, :invalid_metadata}
     end
-  end
-
-  defp parse_metadata(_lines, version) do
-    {:error, {:unsupported_version, version}}
   end
 
   defp skip_to_first_object(["#" <> _ | _] = lines), do: lines
   defp skip_to_first_object([_ | rest]), do: skip_to_first_object(rest)
   defp skip_to_first_object([]), do: []
 
-  # Parse all objects
-  defp parse_objects(lines, metadata) do
-    parse_objects_loop(lines, metadata.object_count, metadata, %{})
+  defp parse_objects(lines, count, version) do
+    parse_objects_loop(lines, count, version, %{})
   end
 
-  defp parse_objects_loop(lines, 0, _metadata, acc), do: {:ok, acc, lines}
+  defp parse_objects_loop(lines, 0, _v, acc), do: {:ok, acc, lines}
 
-  defp parse_objects_loop(lines, remaining, metadata, acc) do
-    case parse_object(lines, metadata.version) do
-      {:ok, object, rest} ->
-        parse_objects_loop(rest, remaining - 1, metadata, Map.put(acc, object.id, object))
+  defp parse_objects_loop(lines, count, version, acc) do
+    case parse_object(lines, version) do
+      {:ok, obj, rest} ->
+        parse_objects_loop(rest, count - 1, version, Map.put(acc, obj.id, obj))
 
-      {:error, _} = error ->
-        error
+      err ->
+        err
     end
   end
 
-  # Parse a single object
-  defp parse_object(["" | rest], version), do: parse_object(rest, version)
-
-  defp parse_object(["#" <> id_str | rest], version) do
-    with {:ok, id} <- parse_integer(id_str),
-         {:ok, name, rest} <- parse_line(rest),
-         # Both Format 1 and Format 4 have an extra line after the name (handles), usually empty
-         {:ok, _handles, rest} <- parse_line(rest),
-         {:ok, flags, rest} <- parse_flags_line(rest),
+  defp parse_object(["#" <> id_str | rest], _version) do
+    with {:ok, id} <- parse_id(id_str),
+         {:ok, name, rest} <- next_line(rest),
+         {:ok, _handles, rest} <- next_line(rest),
+         {:ok, flags, rest} <- parse_integer_line(rest),
          {:ok, owner, rest} <- parse_integer_line(rest),
          {:ok, location, rest} <- parse_integer_line(rest),
-         {:ok, first_content_id, rest} <- parse_integer_line(rest),
-         {:ok, next_id, rest} <- parse_integer_line(rest),
+         {:ok, contents, rest} <- parse_integer_line(rest),
+         {:ok, next, rest} <- parse_integer_line(rest),
          {:ok, parent, rest} <- parse_integer_line(rest),
-         {:ok, first_child_id, rest} <- parse_integer_line(rest),
-         {:ok, sibling_id, rest} <- parse_integer_line(rest),
-         {:ok, verbs, rest} <- parse_verb_headers(rest),
-         {:ok, {properties, inherited_values}, rest} <- parse_property_headers(rest, version) do
-      object = %Object{
+         {:ok, child, rest} <- parse_integer_line(rest),
+         {:ok, sibling, rest} <- parse_integer_line(rest),
+         {:ok, verbs, rest} <- parse_verbs(rest),
+         {:ok, {local_names, values}, rest} <- parse_properties(rest) do
+      obj = %Object{
         id: id,
         name: name,
         flags: flags,
         owner: owner,
         location: location,
-        first_content_id: first_content_id,
-        next_id: next_id,
         parent: parent,
-        first_child_id: first_child_id,
-        sibling_id: sibling_id,
         verbs: verbs,
-        properties: properties
+        properties: local_names |> Enum.map(&%Property{name: &1}),
+        # Store raw values for post-processing
+        temp_values: values,
+        first_content_id: contents,
+        next_id: next,
+        first_child_id: child,
+        sibling_id: sibling
       }
 
-      object = Map.put(object, :temp_inherited_values, inherited_values)
-
-      {:ok, object, rest}
+      {:ok, obj, rest}
     end
   end
 
-  defp parse_object(lines, _version) do
-    {:error, {:invalid_object_start, Enum.take(lines, 5)}}
-  end
-
-  # Parse verb headers (name and metadata, code comes later)
-  defp parse_verb_headers([count_line | rest]) do
-    case Integer.parse(String.trim(count_line)) do
-      {count, _} -> parse_verb_headers_loop(rest, count, [])
-      :error -> {:error, :invalid_verb_count}
+  defp parse_id(s) do
+    case Integer.parse(String.trim(s)) do
+      {id, _} -> {:ok, id}
+      _ -> {:error, :invalid_id}
     end
   end
 
-  defp parse_verb_headers_loop(lines, 0, acc), do: {:ok, Enum.reverse(acc), lines}
+  defp next_line([line | rest]), do: {:ok, line, rest}
+  defp next_line([]), do: {:error, :unexpected_eof}
 
-  defp parse_verb_headers_loop(lines, remaining, acc) do
-    case parse_verb_header_multiline(lines) do
-      {:ok, verb, rest} ->
-        parse_verb_headers_loop(rest, remaining - 1, [verb | acc])
-
-      {:error, _} = error ->
-        error
+  defp parse_integer_line([line | rest]) do
+    case Integer.parse(String.trim(line)) do
+      {n, _} -> {:ok, n, rest}
+      _ -> {:error, {:expected_int, line}}
     end
   end
 
-  defp parse_verb_header_multiline([name, owner, perms, prep | rest]) do
-    with {owner_int, _} <- Integer.parse(String.trim(owner)),
-         {perms_int, _} <- Integer.parse(String.trim(perms)),
-         {prep_int, _} <- Integer.parse(String.trim(prep)) do
-      {:ok,
-       %Verb{
-         name: String.trim(name),
-         owner: owner_int,
-         perms: perms_int,
-         prep: prep_int,
-         args: {:this, :none, :none},
-         code: []
-       }, rest}
+  defp parse_verbs([count_line | rest]) do
+    {count, _} = Integer.parse(String.trim(count_line))
+    parse_verbs_loop(rest, count, [])
+  end
+
+  defp parse_verbs_loop(rest, 0, acc), do: {:ok, Enum.reverse(acc), rest}
+
+  defp parse_verbs_loop([name, owner_str, perms_str, prep_str | rest], count, acc) do
+    verb = %Verb{
+      name: name,
+      owner: String.to_integer(String.trim(owner_str)),
+      perms: String.to_integer(String.trim(perms_str)),
+      prep: String.to_integer(String.trim(prep_str)),
+      args: {:this, :none, :none},
+      code: []
+    }
+
+    parse_verbs_loop(rest, count - 1, [verb | acc])
+  end
+
+  defp parse_properties([count_line | rest]) do
+    {count, _} = Integer.parse(String.trim(count_line))
+    {:ok, names, rest} = parse_names(rest, count, [])
+    {:ok, val_count_line, rest} = next_line(rest)
+    {val_count, _} = Integer.parse(String.trim(val_count_line))
+    {:ok, values, rest} = parse_values(rest, val_count, [])
+    {:ok, {names, values}, rest}
+  end
+
+  defp parse_names(rest, 0, acc), do: {:ok, Enum.reverse(acc), rest}
+  defp parse_names([name | rest], count, acc), do: parse_names(rest, count - 1, [name | acc])
+
+  defp parse_values(rest, 0, acc), do: {:ok, Enum.reverse(acc), rest}
+
+  defp parse_values(lines, count, acc) do
+    with {:ok, val, rest} <- parse_value(lines),
+         [owner_str, perms_str | rest] <- rest,
+         {owner, _} <- Integer.parse(String.trim(owner_str)),
+         {perms, _} <- Integer.parse(String.trim(perms_str)) do
+      parse_values(rest, count - 1, [{val, owner, perms} | acc])
     else
-      _ -> {:error, :invalid_verb_header}
+      _ -> {:error, :invalid_property_value}
     end
   end
-
-  defp parse_verb_header_multiline(lines) do
-    {:error, {:invalid_verb_header, lines}}
-  end
-
-  defp parse_property_headers([count_line | rest], version) do
-    case Integer.parse(String.trim(count_line)) do
-      {count, _} ->
-        {:ok, names, rest} = parse_property_names(rest, count, [])
-        process_property_values(rest, names, count, version)
-
-      :error ->
-        {:error, {:invalid_property_count, count_line}}
-    end
-  end
-
-  defp process_property_values([val_count_line | rest], names, count, _version) do
-    case Integer.parse(String.trim(val_count_line)) do
-      {val_count, _} ->
-        case parse_property_values(rest, val_count, []) do
-          {:ok, values, rest} ->
-            {properties, inherited} = map_property_values(names, values, count, val_count)
-            {:ok, {properties, inherited}, rest}
-
-          {:error, reason} ->
-            {:error, reason}
-        end
-
-      :error ->
-        {:error, {:invalid_property_value_count, val_count_line}}
-    end
-  end
-
-  defp map_property_values(names, values, count, val_count) do
-    # Inherited properties are at the beginning
-    num_inherited = max(0, val_count - count)
-    inherited_values = Enum.take(values, num_inherited)
-
-    # Local properties are at the end
-    local_values = Enum.drop(values, num_inherited)
-
-    properties =
-      Enum.zip(names, local_values)
-      |> Enum.map(fn {name, {value, owner, perms}} ->
-        %Property{
-          name: name,
-          value: value,
-          owner: owner,
-          perms: Integer.to_string(perms)
-        }
-      end)
-
-    {properties, inherited_values}
-  end
-
-  defp parse_property_names(lines, 0, acc), do: {:ok, Enum.reverse(acc), lines}
-
-  defp parse_property_names([name | rest], remaining, acc) do
-    parse_property_names(rest, remaining - 1, [String.trim(name) | acc])
-  end
-
-  defp parse_property_values(lines, 0, acc), do: {:ok, Enum.reverse(acc), lines}
-
-  defp parse_property_values(lines, remaining, acc) do
-    case parse_value(lines) do
-      {:ok, value, [owner_str, perms_str | rest]} ->
-        with {owner, _} <- Integer.parse(String.trim(owner_str)),
-             {perms, _} <- Integer.parse(String.trim(perms_str)) do
-          parse_property_values(rest, remaining - 1, [{value, owner, perms} | acc])
-        else
-          _ -> {:error, {:invalid_property_metadata, owner_str, perms_str}}
-        end
-
-      _ ->
-        {:error, :unexpected_eof_in_property_values}
-    end
-  end
-
-  defp parse_value([]), do: {:error, :unexpected_eof}
 
   defp parse_value([type_str | rest]) do
-    case Integer.parse(String.trim(type_str)) do
-      {type_code, _} ->
-        # Modern MOO uses 0x20 bit for 'shared' flag
-        base_type = band(type_code, 0x1F)
+    {type_code, _} = Integer.parse(String.trim(type_str))
+    base_type = Bitwise.band(type_code, 0x1F)
 
-        # Check for shared flag (0x20)
-        if band(type_code, 0x20) != 0 do
-          # Shared value: read one integer ID and treat as numerical value for now
-          [id_str | next_rest] = rest
-          {:ok, Value.num(String.to_integer(String.trim(id_str))), next_rest}
-        else
-          dispatch_value(base_type, rest, type_str)
-        end
+    case Bitwise.band(type_code, 0x20) != 0 do
+      true ->
+        [id_str | rest] = rest
+        {:ok, Value.num(String.to_integer(String.trim(id_str))), rest}
 
-      :error ->
-        {:error, {:invalid_type_code, type_str}}
+      false ->
+        dispatch_value(base_type, rest)
     end
   end
 
-  defp dispatch_value(0, rest, _), do: parse_num(rest)
-  defp dispatch_value(1, rest, _), do: parse_obj_ref(rest)
-  defp dispatch_value(2, rest, _), do: parse_str(rest)
-  defp dispatch_value(3, rest, _), do: parse_err(rest)
-  defp dispatch_value(4, rest, _), do: parse_list_db(rest)
-  defp dispatch_value(5, rest, _), do: {:ok, :clear, rest}
-  defp dispatch_value(6, rest, _), do: {:ok, :none, rest}
-  defp dispatch_value(9, rest, _), do: parse_float(rest)
-  defp dispatch_value(_, _, type_str), do: {:error, {:unknown_type, type_str}}
+  defp dispatch_value(0, [s | rest]),
+    do: {:ok, Value.num(String.to_integer(String.trim(s))), rest}
 
-  defp parse_num([val_str | rest]),
-    do: {:ok, Value.num(String.to_integer(String.trim(val_str))), rest}
+  defp dispatch_value(1, [s | rest]),
+    do: {:ok, Value.obj(String.to_integer(String.trim(s))), rest}
 
-  defp parse_num([]), do: {:error, :unexpected_eof}
+  defp dispatch_value(2, [s | rest]), do: {:ok, Value.str(s), rest}
 
-  defp parse_obj_ref([val_str | rest]),
-    do: {:ok, Value.obj(String.to_integer(String.trim(val_str))), rest}
-
-  defp parse_obj_ref([]), do: {:error, :unexpected_eof}
-
-  defp parse_str([val_str | rest]), do: {:ok, Value.str(val_str), rest}
-  defp parse_str([]), do: {:error, :unexpected_eof}
-
-  defp parse_err([val_str | rest]) do
-    err_atom = map_error_code(String.trim(val_str))
-    {:ok, Value.err(err_atom), rest}
+  defp dispatch_value(3, [s | rest]) do
+    err_code = String.to_integer(String.trim(s))
+    {:ok, Value.err(code_to_error(err_code)), rest}
   end
 
-  defp parse_err([]), do: {:error, :unexpected_eof}
-
-  defp map_error_code("0"), do: :E_NONE
-  defp map_error_code("1"), do: :E_TYPE
-  defp map_error_code("2"), do: :E_DIV
-  defp map_error_code("3"), do: :E_PERM
-  defp map_error_code("4"), do: :E_PROPNF
-  defp map_error_code("5"), do: :E_VERBNF
-  defp map_error_code("6"), do: :E_VARNF
-  defp map_error_code("7"), do: :E_INVIND
-  defp map_error_code("8"), do: :E_RECMOVE
-  defp map_error_code("9"), do: :E_MAXREC
-  defp map_error_code("10"), do: :E_RANGE
-  defp map_error_code("11"), do: :E_ARGS
-  defp map_error_code("12"), do: :E_NACC
-  defp map_error_code("13"), do: :E_INVARG
-  defp map_error_code("14"), do: :E_QUOTA
-  defp map_error_code("15"), do: :E_FLOAT
-  defp map_error_code(_), do: :E_NONE
-
-  defp parse_list_db([len_str | rest]) do
-    len = String.to_integer(String.trim(len_str))
-    parse_list_elements_db(rest, len, [])
+  defp dispatch_value(4, [count_str | rest]) do
+    {count, _} = Integer.parse(String.trim(count_str))
+    parse_list_elements(rest, count, [])
   end
 
-  defp parse_list_db([]), do: {:error, :unexpected_eof}
+  defp dispatch_value(5, rest), do: {:ok, :clear, rest}
+  defp dispatch_value(6, rest), do: {:ok, :none, rest}
+  defp dispatch_value(9, [s | rest]), do: {:ok, {:float, s}, rest}
 
-  defp parse_float([val_str | rest]) do
-    case Float.parse(String.trim(val_str)) do
-      {f, _} -> {:ok, Value.num(trunc(f)), rest}
-      :error -> {:ok, Value.num(0), rest}
-    end
+  defp code_to_error(0), do: :E_NONE
+  defp code_to_error(1), do: :E_TYPE
+  defp code_to_error(2), do: :E_DIV
+  defp code_to_error(3), do: :E_PERM
+  defp code_to_error(4), do: :E_PROPNF
+  defp code_to_error(5), do: :E_VERBNF
+  defp code_to_error(6), do: :E_VARNF
+  defp code_to_error(7), do: :E_INVIND
+  defp code_to_error(8), do: :E_RECMOVE
+  defp code_to_error(9), do: :E_MAXREC
+  defp code_to_error(10), do: :E_RANGE
+  defp code_to_error(11), do: :E_ARGS
+  defp code_to_error(12), do: :E_NACC
+  defp code_to_error(13), do: :E_INVARG
+  defp code_to_error(14), do: :E_QUOTA
+  defp code_to_error(15), do: :E_FLOAT
+  defp code_to_error(_), do: :E_NONE
+
+  defp parse_list_elements(rest, 0, acc), do: {:ok, Value.list(Enum.reverse(acc)), rest}
+
+  defp parse_list_elements(lines, count, acc) do
+    {:ok, val, rest} = parse_value(lines)
+    parse_list_elements(rest, count - 1, [val | acc])
   end
 
-  defp parse_float([]), do: {:error, :unexpected_eof}
-
-  defp parse_list_elements_db(lines, 0, acc), do: {:ok, Value.list(Enum.reverse(acc)), lines}
-
-  defp parse_list_elements_db(lines, remaining, acc) do
-    case parse_value(lines) do
-      {:ok, val, rest} -> parse_list_elements_db(rest, remaining - 1, [val | acc])
-      err -> err
-    end
-  end
-
-  # Skip verb code sections
   defp parse_verb_code(lines, objects) do
-    # Skip any non-verb-code lines until we find first verb reference
     lines = skip_to_verb_code(lines)
     parse_verb_code_loop(lines, objects)
   end
 
-  # Skip lines until we find a verb code reference (#N:N)
   defp skip_to_verb_code([line | rest] = lines) do
-    case Regex.match?(~r/^#\d+:\d+$/, String.trim(line)) do
-      true -> lines
-      false -> skip_to_verb_code(rest)
-    end
+    if Regex.match?(~r/^#\d+:\d+$/, String.trim(line)), do: lines, else: skip_to_verb_code(rest)
   end
 
   defp skip_to_verb_code([]), do: []
@@ -452,92 +255,95 @@ defmodule Alchemoo.Database.Parser do
   defp parse_verb_code_loop([], objects), do: {:ok, objects}
 
   defp parse_verb_code_loop(["#" <> ref | rest], objects) do
-    case String.split(ref, ":") do
-      [obj_id_str, verb_idx_str] ->
-        process_verb_code_ref(obj_id_str, verb_idx_str, rest, objects)
-
-      _ ->
-        parse_verb_code_loop(rest, objects)
-    end
-  end
-
-  defp parse_verb_code_loop([_line | rest], objects) do
+    [obj_id_str, verb_idx_str] = String.split(ref, ":")
+    obj_id = String.to_integer(obj_id_str)
+    verb_idx = String.to_integer(verb_idx_str)
+    {:ok, code, rest} = parse_code_block(rest, [])
+    objects = update_verb_code(objects, obj_id, verb_idx, code)
     parse_verb_code_loop(rest, objects)
   end
 
-  defp process_verb_code_ref(obj_id_str, verb_idx_str, rest, objects) do
-    case {Integer.parse(obj_id_str), Integer.parse(verb_idx_str)} do
-      {{obj_id, _}, {verb_idx, _}} ->
-        with {:ok, code, rest} <- parse_code_block(rest),
-             {:ok, objects} <- update_verb_code(objects, obj_id, verb_idx, code) do
-          parse_verb_code_loop(rest, objects)
+  defp parse_verb_code_loop([_ | rest], objects), do: parse_verb_code_loop(rest, objects)
+
+  defp parse_code_block(["." | rest], acc), do: {:ok, Enum.reverse(acc), rest}
+  defp parse_code_block([line | rest], acc), do: parse_code_block(rest, [line | acc])
+  defp parse_code_block([], acc), do: {:ok, Enum.reverse(acc), []}
+
+  defp update_verb_code(objects, id, idx, code) do
+    if obj = objects[id] do
+      verbs = List.update_at(obj.verbs, idx, &%{&1 | code: code})
+      Map.put(objects, id, %{obj | verbs: verbs})
+    else
+      objects
+    end
+  end
+
+  defp build_relationship_lists(objects) do
+    # Build children and contents maps in one pass
+    {children_map, contents_map} =
+      Enum.reduce(objects, {%{}, %{}}, fn {id, obj}, {c_acc, l_acc} ->
+        c_acc =
+          if obj.parent >= 0, do: Map.update(c_acc, obj.parent, [id], &[id | &1]), else: c_acc
+
+        l_acc =
+          if obj.location >= 0, do: Map.update(l_acc, obj.location, [id], &[id | &1]), else: l_acc
+
+        {c_acc, l_acc}
+      end)
+
+    # Apply maps to objects
+    Enum.into(objects, %{}, fn {id, obj} ->
+      {id, %{obj | children: children_map[id] || [], contents: contents_map[id] || []}}
+    end)
+  end
+
+  defp resolve_properties(objects) do
+    # Resolve properties using a memoized topological approach.
+    # We must ensure parents are resolved before children.
+    resolve_recursive(Map.keys(objects), objects, %{})
+  end
+
+  defp resolve_recursive([], _objects, resolved), do: resolved
+
+  defp resolve_recursive([id | rest], objects, resolved) do
+    if Map.has_key?(resolved, id) do
+      resolve_recursive(rest, objects, resolved)
+    else
+      obj = objects[id]
+
+      # Resolve parent first if needed
+      resolved =
+        if obj.parent >= 0 and not Map.has_key?(resolved, obj.parent) do
+          resolve_recursive([obj.parent], objects, resolved)
+        else
+          resolved
         end
 
-      _ ->
-        parse_verb_code_loop(rest, objects)
-    end
-  end
+      parent_props = if obj.parent >= 0, do: resolved[obj.parent].all_properties, else: []
 
-  defp parse_code_block(lines) do
-    parse_code_block_loop(lines, [])
-  end
+      # RULE: local properties first, then inherited
+      {local_values, inherited_values} = Enum.split(obj.temp_values, length(obj.properties))
 
-  defp parse_code_block_loop(["." | rest], acc) do
-    {:ok, Enum.reverse(acc), rest}
-  end
+      local_properties =
+        Enum.zip(obj.properties, local_values)
+        |> Enum.map(fn {p, {v, o, perms}} ->
+          %{p | value: v, owner: o, perms: Integer.to_string(perms)}
+        end)
 
-  defp parse_code_block_loop([line | rest], acc) do
-    parse_code_block_loop(rest, [line | acc])
-  end
+      overridden =
+        Enum.zip(parent_props, inherited_values)
+        |> Enum.into(%{}, fn {p, {v, o, perms}} ->
+          {p.name, %{p | value: v, owner: o, perms: Integer.to_string(perms)}}
+        end)
 
-  defp parse_code_block_loop([], acc) do
-    {:ok, Enum.reverse(acc), []}
-  end
+      updated_obj = %{
+        obj
+        | properties: local_properties,
+          overridden_properties: overridden,
+          all_properties: local_properties ++ parent_props
+      }
 
-  defp update_verb_code(objects, obj_id, verb_idx, code) do
-    case Map.get(objects, obj_id) do
-      nil ->
-        # Object not found - skip silently
-        {:ok, objects}
-
-      object ->
-        case Enum.at(object.verbs, verb_idx) do
-          nil ->
-            # Verb index out of range - skip silently
-            {:ok, objects}
-
-          verb ->
-            updated_verb = %{verb | code: code}
-            updated_verbs = List.replace_at(object.verbs, verb_idx, updated_verb)
-            updated_object = %{object | verbs: updated_verbs}
-            {:ok, Map.put(objects, obj_id, updated_object)}
-        end
-    end
-  end
-
-  # Helper functions
-  defp parse_line([line | rest]), do: {:ok, line, rest}
-  defp parse_line([]), do: {:error, :unexpected_eof}
-
-  defp parse_flags_line([line | rest]) do
-    # Flags can be empty line or integer
-    case String.trim(line) do
-      "" -> {:ok, 0, rest}
-      str -> parse_integer_line([str | rest])
-    end
-  end
-
-  defp parse_integer_line([line | rest]) do
-    case parse_integer(line) do
-      {:ok, num} -> {:ok, num, rest}
-      error -> error
-    end
-  end
-
-  defp parse_integer(str) do
-    case Integer.parse(String.trim(str)) do
-      {num, _} -> {:ok, num}
-      :error -> {:error, {:invalid_integer, str}}
+      resolve_recursive(rest, objects, Map.put(resolved, id, updated_obj))
     end
   end
 end

@@ -18,7 +18,9 @@ defmodule Alchemoo.Database.Object do
     children: [],
     verbs: [],
     properties: [],
-    overridden_properties: %{}
+    overridden_properties: %{},
+    all_properties: [],
+    temp_values: []
   ]
 
   @type t :: %__MODULE__{

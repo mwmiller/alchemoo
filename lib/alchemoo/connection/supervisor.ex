@@ -3,6 +3,7 @@ defmodule Alchemoo.Connection.Supervisor do
   Dynamic supervisor for connection handler processes.
   """
   use DynamicSupervisor
+  require Logger
 
   # CONFIG: Should be extracted to config
   # CONFIG: :alchemoo, :max_connections
@@ -39,7 +40,10 @@ defmodule Alchemoo.Connection.Supervisor do
 
   @doc "List all connection PIDs"
   def list_connections do
-    DynamicSupervisor.which_children(__MODULE__)
+    children = DynamicSupervisor.which_children(__MODULE__)
+    Logger.debug("Supervisor children: #{inspect(children)}")
+
+    children
     |> Enum.map(fn {_, pid, _, _} -> pid end)
   end
 end

@@ -11,17 +11,20 @@ defmodule Alchemoo.Database.Flags do
   @doc "Object has wizard permissions"
   def wizard, do: 0x0002
 
+  @doc "Object has programmer permissions"
+  def programmer, do: 0x0004
+
   @doc "Object is readable by anyone"
-  def read, do: 0x0004
+  def read, do: 0x0008
 
   @doc "Object is writable by anyone"
-  def write, do: 0x0008
+  def write, do: 0x0010
 
   @doc "Object can be parented to by anyone"
-  def fertile, do: 0x0010
+  def fertile, do: 0x0020
 
   @doc "Object is anonymous (Format 4+)"
-  def anonymous, do: 0x0020
+  def anonymous, do: 0x0040
 
   @doc "Check if a specific flag is set"
   def set?(flags, flag), do: (flags &&& flag) != 0

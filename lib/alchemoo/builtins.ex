@@ -41,7 +41,21 @@ defmodule Alchemoo.Builtins do
   end
 
   def call(name, args, env) when is_atom(name) do
-    Dispatch.call(name, args, env)
+    res = Dispatch.call(name, args, env)
+
+    case res do
+      {:ok, val, _} ->
+        Logger.debug(
+          "Builtin #{name}(#{Enum.map_join(args, ", ", &Value.to_literal/1)}) -> #{Value.to_literal(val)}"
+        )
+
+      {:error, err} ->
+        Logger.debug(
+          "Builtin #{name}(#{Enum.map_join(args, ", ", &Value.to_literal/1)}) -> ERROR: #{inspect(err)}"
+        )
+    end
+
+    res
   end
 
   # Implementation functions
@@ -582,14 +596,19 @@ defmodule Alchemoo.Builtins do
   def find_player_connection(player_id) do
     # Get all connection handlers and find one for this player
     connections = ConnSupervisor.list_connections()
+    Logger.debug("Finding connection for ##{player_id} among #{length(connections)} connections")
 
     Enum.find_value(connections, {:error, :not_found}, fn pid ->
-      case Handler.info(pid) do
-        %{player_id: ^player_id} -> {:ok, pid}
-        _ -> nil
-      end
+      match_player_connection(pid, player_id, Handler.info(pid))
     end)
   end
+
+  defp match_player_connection(pid, player_id, %{player_id: pid_player_id} = info) do
+    Logger.debug("Connection #{inspect(pid)}: player_id=#{pid_player_id} state=#{info.state}")
+    if pid_player_id == player_id, do: {:ok, pid}, else: nil
+  end
+
+  defp match_player_connection(_pid, _player_id, _info), do: nil
 
   # connected_players([full]) - list of connected player objects or info
   def connected_players([]) do

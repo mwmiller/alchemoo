@@ -174,7 +174,7 @@ defmodule Alchemoo.Task do
       handler_pid: Keyword.get(opts, :handler_pid),
       sync_caller: Keyword.get(opts, :sync_caller),
       tick_quota: Keyword.get(opts, :tick_quota, @default_tick_quota),
-      perms: player_id,
+      perms: Keyword.get(opts, :perms, player_id),
       started_at: System.monotonic_time(:second)
     }
 
