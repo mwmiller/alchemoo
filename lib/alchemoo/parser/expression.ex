@@ -222,7 +222,10 @@ defmodule Alchemoo.Parser.Expression do
 
   # Primary expressions: literals, variables, parentheses, splice
   defp parse_primary(["@" | rest]) do
-    with {:ok, expr, rest} <- parse_primary(rest) do
+    # In LambdaMOO code, splices often apply to conditional expressions:
+    #   @(cond ? {..} | {})
+    # Parse a full conditional here, not just a primary term.
+    with {:ok, expr, rest} <- parse_conditional(rest) do
       {:ok, %AST.UnaryOp{op: :@, expr: expr}, rest}
     end
   end

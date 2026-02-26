@@ -151,6 +151,10 @@ defmodule Alchemoo.Value do
     end
   end
 
+  def range({:str, _s}, start_idx, end_idx) when start_idx > 0 and end_idx < start_idx do
+    {:str, ""}
+  end
+
   def range({:list, items}, start_idx, end_idx) when start_idx > 0 and end_idx >= start_idx do
     len = Kernel.length(items)
     start_idx = max(1, start_idx)
@@ -165,7 +169,64 @@ defmodule Alchemoo.Value do
     end
   end
 
+  def range({:list, _items}, start_idx, end_idx) when start_idx > 0 and end_idx < start_idx do
+    {:list, []}
+  end
+
   def range(_, _, _), do: {:err, :E_TYPE}
+
+  @doc """
+  Replace range in string or list (1-based, inclusive).
+  """
+  def set_range({:str, s}, start_idx, end_idx, {:str, replacement}) when start_idx > 0 do
+    len = String.length(s)
+    insert_at = min(start_idx - 1, len)
+
+    {prefix, suffix} =
+      if end_idx < start_idx do
+        {
+          String.slice(s, 0, insert_at),
+          String.slice(s, insert_at, len - insert_at)
+        }
+      else
+        end_clamped = min(end_idx, len)
+        delete_count = max(end_clamped - start_idx + 1, 0)
+
+        {
+          String.slice(s, 0, insert_at),
+          String.slice(s, insert_at + delete_count, len - insert_at - delete_count)
+        }
+      end
+
+    {:str, prefix <> replacement <> suffix}
+  end
+
+  def set_range({:list, items}, start_idx, end_idx, {:list, replacement}) when start_idx > 0 do
+    len = Kernel.length(items)
+    insert_at = min(start_idx - 1, len)
+
+    {prefix, suffix} =
+      if end_idx < start_idx do
+        {
+          Enum.take(items, insert_at),
+          Enum.drop(items, insert_at)
+        }
+      else
+        end_clamped = min(end_idx, len)
+        delete_count = max(end_clamped - start_idx + 1, 0)
+
+        {
+          Enum.take(items, insert_at),
+          Enum.drop(items, insert_at + delete_count)
+        }
+      end
+
+    {:list, prefix ++ replacement ++ suffix}
+  end
+
+  def set_range({:str, _}, _start_idx, _end_idx, _), do: {:err, :E_TYPE}
+  def set_range({:list, _}, _start_idx, _end_idx, _), do: {:err, :E_TYPE}
+  def set_range(_, _, _, _), do: {:err, :E_TYPE}
 
   @doc """
   Concatenate two strings or lists.

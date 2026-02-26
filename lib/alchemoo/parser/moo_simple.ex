@@ -63,11 +63,19 @@ defmodule Alchemoo.Parser.MOOSimple do
     handle_return(rest_str, rest)
   end
 
-  defp parse_statement("break" <> _, rest) do
+  defp parse_statement("break", rest) do
     {:ok, %AST.Break{}, rest}
   end
 
-  defp parse_statement("continue" <> _, rest) do
+  defp parse_statement("break;", rest) do
+    {:ok, %AST.Break{}, rest}
+  end
+
+  defp parse_statement("continue", rest) do
+    {:ok, %AST.Continue{}, rest}
+  end
+
+  defp parse_statement("continue;", rest) do
     {:ok, %AST.Continue{}, rest}
   end
 

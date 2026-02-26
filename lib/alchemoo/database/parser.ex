@@ -3,8 +3,6 @@ defmodule Alchemoo.Database.Parser do
   Parses LambdaMOO database files (Format Version 4).
   """
   require Logger
-  require Bitwise
-
   alias Alchemoo.Database
   alias Alchemoo.Database.{Object, Property, Verb}
   alias Alchemoo.Value
@@ -143,12 +141,15 @@ defmodule Alchemoo.Database.Parser do
   defp parse_verbs_loop(rest, 0, acc), do: {:ok, Enum.reverse(acc), rest}
 
   defp parse_verbs_loop([name, owner_str, perms_str, prep_str | rest], count, acc) do
+    perms = String.to_integer(String.trim(perms_str))
+    prep = String.to_integer(String.trim(prep_str))
+
     verb = %Verb{
       name: name,
       owner: String.to_integer(String.trim(owner_str)),
-      perms: String.to_integer(String.trim(perms_str)),
-      prep: String.to_integer(String.trim(prep_str)),
-      args: {:this, :none, :none},
+      perms: perms,
+      prep: prep,
+      args: Verb.args_from_flags(perms, prep),
       code: []
     }
 

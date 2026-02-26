@@ -3,7 +3,7 @@ defmodule Alchemoo.Version do
   Server version and information.
   """
 
-  @version "0.4.0"
+  @version to_string(Mix.Project.config()[:version])
 
   def version, do: @version
 

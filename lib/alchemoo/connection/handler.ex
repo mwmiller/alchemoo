@@ -8,6 +8,7 @@ defmodule Alchemoo.Connection.Handler do
 
   alias Alchemoo.Command.Executor
   alias Alchemoo.Database.Server, as: DB
+  alias Alchemoo.Runtime
   alias Alchemoo.Task, as: MOOTask
   alias Alchemoo.TaskSupervisor
   alias Alchemoo.Value
@@ -190,7 +191,7 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   @impl true
-  def handle_info({ref, {:ok, result}}, %{active_task: %{ref: ref}} = conn) do
+  def handle_info({ref, {:ok, result}}, %{active_task: %{ref: ref} = active_task} = conn) do
     # Cleanup task monitor
     Process.demonitor(ref, [:flush])
     conn = %{conn | active_task: nil}
@@ -203,6 +204,7 @@ defmodule Alchemoo.Connection.Handler do
         {:noreply, process_buffered_input(new_conn)}
 
       _ ->
+        maybe_log_unrecognized_login_command(active_task, result)
         {:noreply, process_buffered_input(conn)}
     end
   end
@@ -292,7 +294,7 @@ defmodule Alchemoo.Connection.Handler do
             MOOTask.run(code, env, task_opts)
           end)
 
-        %{conn | active_task: task}
+        %{conn | active_task: %{ref: task.ref, task: task, argstr: argstr, args: args}}
 
       _ ->
         Logger.error("Verb #0:do_login_command not found")
@@ -364,32 +366,11 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   defp process_moo_command(conn, line) do
-    case line do
-      "quit" ->
-        send_text(conn, "Goodbye!\n")
-        GenServer.cast(self(), :close)
-        conn
-
-      "@who" ->
-        send_text(conn, "Connected players:\n  You\n")
-        conn
-
-      "@stats" ->
-        stats = DB.stats()
-
-        send_text(
-          conn,
-          "Database: #{stats.object_count} objects\nTasks: #{TaskSupervisor.count_tasks()}\n"
-        )
-
-        conn
-
-      "" ->
-        conn
-
-      _ ->
-        Executor.execute(line, conn.player_id, self())
-        conn
+    if line == "" do
+      conn
+    else
+      Executor.execute(line, conn.player_id, self())
+      conn
     end
   end
 
@@ -432,4 +413,67 @@ defmodule Alchemoo.Connection.Handler do
     # FUTURE: Support explicit input queuing
     conn
   end
+
+  defp maybe_log_unrecognized_login_command(%{argstr: ""}, _result), do: :ok
+
+  defp maybe_log_unrecognized_login_command(%{argstr: argstr, args: args}, result) do
+    if Application.get_env(:alchemoo, :log_login_resolution, true) do
+      parse_resolution = diagnose_login_parse_command(args, argstr)
+
+      if login_parse_fell_back?(args, parse_resolution) do
+        Logger.warning(
+          "Unrecognized login command: argstr=#{inspect(argstr)} args=#{inspect(args)} result=#{inspect(result)} parse=#{inspect(parse_resolution)}"
+        )
+      end
+    end
+  end
+
+  defp diagnose_login_parse_command(args, argstr) do
+    runtime = Runtime.new(DB.get_snapshot())
+    arg_vals = Enum.map(args, &Value.str/1)
+
+    env = %{
+      :runtime => runtime,
+      "player" => Value.obj(-1),
+      "this" => Value.obj(0),
+      "caller" => Value.obj(-1),
+      "verb" => Value.str("do_login_command"),
+      "args" => Value.list(arg_vals),
+      "argstr" => Value.str(argstr)
+    }
+
+    prev_ctx = Process.get(:task_context)
+
+    Process.put(:task_context, %{
+      this: 0,
+      player: -1,
+      caller: -1,
+      perms: 2,
+      caller_perms: 2,
+      verb_definer: 0,
+      verb_name: "do_login_command",
+      stack: []
+    })
+
+    result =
+      case Runtime.call_verb(runtime, Value.obj(10), "parse_command", arg_vals, env) do
+        {:ok, value, _new_runtime} -> value
+        {:error, err} -> err
+      end
+
+    Process.put(:task_context, prev_ctx)
+    result
+  end
+
+  defp login_parse_fell_back?(input_args, {:list, [{:str, parsed_verb} | _]}) do
+    input_verb =
+      case input_args do
+        [first | _] -> first
+        _ -> ""
+      end
+
+    parsed_verb == "?" and input_verb != "?"
+  end
+
+  defp login_parse_fell_back?(_input_args, _parse), do: false
 end

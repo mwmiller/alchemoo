@@ -772,6 +772,7 @@ defmodule Alchemoo.Database.Server do
     # Check overridden inherited properties
     case Map.get(obj.overridden_properties, prop_name) do
       nil -> find_property_recursive(objects, obj.parent, prop_name)
+      %Property{value: :clear} -> find_property_recursive(objects, obj.parent, prop_name)
       prop -> {:ok, prop.value}
     end
   end

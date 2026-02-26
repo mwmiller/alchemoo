@@ -31,7 +31,7 @@ defmodule Alchemoo.Runtime do
   def get_property(runtime, {:obj, obj_id}, prop_name) when is_binary(prop_name) do
     case Map.get(runtime.objects, obj_id) do
       nil ->
-        Logger.debug("Property Lookup: ##{obj_id}.#{prop_name} -> E_INVIND")
+        maybe_log_property_lookup("##{obj_id}.#{prop_name}", "E_INVIND")
         {:error, Value.err(:E_INVIND)}
 
       object ->
@@ -39,10 +39,10 @@ defmodule Alchemoo.Runtime do
 
         case res do
           {:ok, val} ->
-            Logger.debug("Property Lookup: ##{obj_id}.#{prop_name} -> #{Value.to_literal(val)}")
+            maybe_log_property_lookup("##{obj_id}.#{prop_name}", Value.to_literal(val))
 
           {:error, err} ->
-            Logger.debug("Property Lookup: ##{obj_id}.#{prop_name} -> ERROR: #{inspect(err)}")
+            maybe_log_property_lookup("##{obj_id}.#{prop_name}", "ERROR: #{inspect(err)}")
         end
 
         res
@@ -143,8 +143,14 @@ defmodule Alchemoo.Runtime do
   defp find_overridden_property(object, prop_name, runtime) do
     # Check overridden inherited properties
     case Map.get(object.overridden_properties, prop_name) do
-      nil -> lookup_parent_property(object.parent, prop_name, runtime)
-      prop -> {:ok, prop.value}
+      nil ->
+        lookup_parent_property(object.parent, prop_name, runtime)
+
+      %Alchemoo.Database.Property{value: :clear} ->
+        lookup_parent_property(object.parent, prop_name, runtime)
+
+      prop ->
+        {:ok, prop.value}
     end
   end
 
@@ -267,9 +273,11 @@ defmodule Alchemoo.Runtime do
   end
 
   defp execute_cached_ast(ast, verb, this_id, args, env, runtime, context) do
-    Logger.debug(
-      "Runtime: executing cached AST for #{Value.to_literal(Value.obj(this_id))}:#{verb.name}()"
-    )
+    if trace_runtime_verbs?() do
+      Logger.debug(
+        "Runtime: executing cached AST for #{Value.to_literal(Value.obj(this_id))}:#{verb.name}()"
+      )
+    end
 
     verb_env = build_verb_env(env, runtime, args, this_id, verb.name, context)
 
@@ -294,9 +302,11 @@ defmodule Alchemoo.Runtime do
   end
 
   defp parse_and_execute_verb(verb, this_id, args, env, runtime, context) do
-    Logger.debug(
-      "Runtime: parsing verb code for #{Value.to_literal(Value.obj(this_id))}:#{verb.name}()"
-    )
+    if trace_runtime_verbs?() do
+      Logger.debug(
+        "Runtime: parsing verb code for #{Value.to_literal(Value.obj(this_id))}:#{verb.name}()"
+      )
+    end
 
     case MOOSimple.parse(verb.code) do
       {:ok, %Alchemoo.AST.Block{} = ast} ->
@@ -308,6 +318,8 @@ defmodule Alchemoo.Runtime do
         Logger.error(
           "Runtime: failed to parse verb code for ##{this_id}:#{verb.name}: #{inspect(reason)}"
         )
+
+        maybe_log_parse_failure_source(verb)
 
         {:error, Value.err(:E_VERBNF)}
     end
@@ -353,6 +365,28 @@ defmodule Alchemoo.Runtime do
       "iobj" => Map.get(env, "iobj", Value.obj(-1)),
       "iobjstr" => Map.get(env, "iobjstr", Value.str(""))
     }
+  end
+
+  defp maybe_log_property_lookup(prop_ref, result) do
+    if trace_runtime_properties?() do
+      Logger.debug("Property Lookup: #{prop_ref} -> #{result}")
+    end
+  end
+
+  defp trace_runtime_verbs?, do: Application.get_env(:alchemoo, :trace_runtime_verbs, false)
+
+  defp trace_runtime_properties?,
+    do: Application.get_env(:alchemoo, :trace_runtime_properties, false)
+
+  defp maybe_log_parse_failure_source(verb) do
+    if Application.get_env(:alchemoo, :trace_runtime_verbs, false) do
+      snippet =
+        verb.code
+        |> Enum.with_index(1)
+        |> Enum.map_join("\n", fn {line, idx} -> "#{idx}: #{line}" end)
+
+      Logger.debug("Runtime parse source for #{verb.name}:\n" <> snippet)
+    end
   end
 
   defp execute_statements(stmts, env) do

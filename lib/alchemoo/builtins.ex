@@ -43,16 +43,18 @@ defmodule Alchemoo.Builtins do
   def call(name, args, env) when is_atom(name) do
     res = Dispatch.call(name, args, env)
 
-    case res do
-      {:ok, val, _} ->
-        Logger.debug(
-          "Builtin #{name}(#{Enum.map_join(args, ", ", &Value.to_literal/1)}) -> #{Value.to_literal(val)}"
-        )
+    if trace_builtins?() do
+      case res do
+        {:ok, val, _} ->
+          Logger.debug(
+            "Builtin #{name}(#{Enum.map_join(args, ", ", &Value.to_literal/1)}) -> #{Value.to_literal(val)}"
+          )
 
-      {:error, err} ->
-        Logger.debug(
-          "Builtin #{name}(#{Enum.map_join(args, ", ", &Value.to_literal/1)}) -> ERROR: #{inspect(err)}"
-        )
+        {:error, err} ->
+          Logger.debug(
+            "Builtin #{name}(#{Enum.map_join(args, ", ", &Value.to_literal/1)}) -> ERROR: #{inspect(err)}"
+          )
+      end
     end
 
     res
@@ -596,7 +598,12 @@ defmodule Alchemoo.Builtins do
   def find_player_connection(player_id) do
     # Get all connection handlers and find one for this player
     connections = ConnSupervisor.list_connections()
-    Logger.debug("Finding connection for ##{player_id} among #{length(connections)} connections")
+
+    if trace_connections?() do
+      Logger.debug(
+        "Finding connection for ##{player_id} among #{length(connections)} connections"
+      )
+    end
 
     Enum.find_value(connections, {:error, :not_found}, fn pid ->
       match_player_connection(pid, player_id, Handler.info(pid))
@@ -604,11 +611,17 @@ defmodule Alchemoo.Builtins do
   end
 
   defp match_player_connection(pid, player_id, %{player_id: pid_player_id} = info) do
-    Logger.debug("Connection #{inspect(pid)}: player_id=#{pid_player_id} state=#{info.state}")
+    if trace_connections?() do
+      Logger.debug("Connection #{inspect(pid)}: player_id=#{pid_player_id} state=#{info.state}")
+    end
+
     if pid_player_id == player_id, do: {:ok, pid}, else: nil
   end
 
   defp match_player_connection(_pid, _player_id, _info), do: nil
+
+  defp trace_builtins?, do: Application.get_env(:alchemoo, :trace_builtins, false)
+  defp trace_connections?, do: Application.get_env(:alchemoo, :trace_connections, false)
 
   # connected_players([full]) - list of connected player objects or info
   def connected_players([]) do
@@ -953,7 +966,7 @@ defmodule Alchemoo.Builtins do
     case DBServer.get_object(obj_id) do
       {:ok, obj} ->
         # Collect all children by traversing sibling chain
-        children = collect_children(obj.child)
+        children = collect_children(obj.first_child_id)
         Value.list(Enum.map(children, &Value.obj/1))
 
       {:error, err} ->
@@ -967,7 +980,7 @@ defmodule Alchemoo.Builtins do
 
   def collect_children(child_id) do
     case DBServer.get_object(child_id) do
-      {:ok, child} -> [child_id | collect_children(child.sibling)]
+      {:ok, child} -> [child_id | collect_children(child.sibling_id)]
       {:error, _} -> []
     end
   end
@@ -1151,17 +1164,34 @@ defmodule Alchemoo.Builtins do
   def verbs(_), do: Value.err(:E_ARGS)
 
   # verb_info(obj, verb) - get verb info
-  def verb_info([{:obj, obj_id}, {:str, verb_name}]) do
-    case DBServer.get_verb_info(obj_id, verb_name) do
-      {:ok, {owner, perms, names}} ->
-        Value.list([Value.obj(owner), Value.str(format_perms(perms)), Value.str(names)])
-
+  def verb_info([{:obj, obj_id}, verb_desc]) do
+    with {:ok, verb_name} <- resolve_verb_desc(obj_id, verb_desc),
+         {:ok, {owner, perms, names}} <- DBServer.get_verb_info(obj_id, verb_name) do
+      Value.list([Value.obj(owner), Value.str(format_perms(perms)), Value.str(names)])
+    else
       {:error, err} ->
         Value.err(err)
+
+      _ ->
+        Value.err(:E_ARGS)
     end
   end
 
   def verb_info(_), do: Value.err(:E_ARGS)
+
+  defp resolve_verb_desc(_obj_id, {:str, verb_name}), do: {:ok, verb_name}
+
+  defp resolve_verb_desc(obj_id, {:num, index}) when index > 0 do
+    with {:ok, obj} <- DBServer.get_object(obj_id) do
+      case Enum.at(obj.verbs, index - 1) do
+        nil -> {:error, :E_VERBNF}
+        verb -> {:ok, verb.name |> String.split(" ") |> List.first() |> String.replace("*", "")}
+      end
+    end
+  end
+
+  defp resolve_verb_desc(_obj_id, {:num, _index}), do: {:error, :E_INVARG}
+  defp resolve_verb_desc(_obj_id, _), do: {:error, :E_ARGS}
 
   def format_perms(perms) when is_integer(perms) do
     # Bitmask to string: 1=r, 2=w, 4=x, 8=d (typical MOO)
@@ -1176,12 +1206,18 @@ defmodule Alchemoo.Builtins do
   def format_perms(_), do: ""
 
   # set_verb_info(obj, verb, info) - set verb info
-  def set_verb_info([{:obj, obj_id}, {:str, verb_name}, {:list, info}]) do
-    {owner, perms, name} = extract_verb_info(info, obj_id, verb_name)
+  def set_verb_info([{:obj, obj_id}, verb_desc, {:list, info}]) do
+    case resolve_verb_desc(obj_id, verb_desc) do
+      {:ok, verb_name} ->
+        {owner, perms, name} = extract_verb_info(info, obj_id, verb_name)
 
-    case DBServer.set_verb_info(obj_id, verb_name, {owner, perms, name}) do
-      :ok -> Value.num(0)
-      {:error, err} -> Value.err(err)
+        case DBServer.set_verb_info(obj_id, verb_name, {owner, perms, name}) do
+          :ok -> Value.num(0)
+          {:error, err} -> Value.err(err)
+        end
+
+      {:error, err} ->
+        Value.err(err)
     end
   end
 
@@ -1211,45 +1247,36 @@ defmodule Alchemoo.Builtins do
   end
 
   # verb_args(obj, verb) - get verb args
-  def verb_args([{:obj, obj_id}, {:str, verb_name}]) do
-    case DBServer.get_verb_args(obj_id, verb_name) do
-      {:ok, {dobj, prep, iobj}} ->
-        Value.list([
-          Value.str(Atom.to_string(dobj)),
-          Value.str(Atom.to_string(prep)),
-          Value.str(Atom.to_string(iobj))
-        ])
-
+  def verb_args([{:obj, obj_id}, verb_desc]) do
+    with {:ok, verb_name} <- resolve_verb_desc(obj_id, verb_desc),
+         {:ok, {dobj, prep, iobj}} <- DBServer.get_verb_args(obj_id, verb_name) do
+      Value.list([
+        Value.str(Atom.to_string(dobj)),
+        Value.str(Atom.to_string(prep)),
+        Value.str(Atom.to_string(iobj))
+      ])
+    else
       {:error, err} ->
         Value.err(err)
+
+      _ ->
+        Value.err(:E_ARGS)
     end
   end
 
   def verb_args(_), do: Value.err(:E_ARGS)
 
   # set_verb_args(obj, verb, args) - set verb args
-  def set_verb_args([{:obj, obj_id}, {:str, verb_name}, {:list, args}]) do
-    dobj =
-      case Enum.at(args, 0) do
-        {:str, s} -> String.to_atom(s)
-        _ -> :none
-      end
+  def set_verb_args([{:obj, obj_id}, verb_desc, {:list, args}]) do
+    case resolve_verb_desc(obj_id, verb_desc) do
+      {:ok, verb_name} ->
+        case DBServer.set_verb_args(obj_id, verb_name, extract_verb_args(args)) do
+          :ok -> Value.num(0)
+          {:error, err} -> Value.err(err)
+        end
 
-    prep =
-      case Enum.at(args, 1) do
-        {:str, s} -> String.to_atom(s)
-        _ -> :none
-      end
-
-    iobj =
-      case Enum.at(args, 2) do
-        {:str, s} -> String.to_atom(s)
-        _ -> :none
-      end
-
-    case DBServer.set_verb_args(obj_id, verb_name, {dobj, prep, iobj}) do
-      :ok -> Value.num(0)
-      {:error, err} -> Value.err(err)
+      {:error, err} ->
+        Value.err(err)
     end
   end
 

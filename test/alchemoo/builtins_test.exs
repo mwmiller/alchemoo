@@ -1,6 +1,7 @@
 defmodule Alchemoo.BuiltinsTest do
   use ExUnit.Case
   alias Alchemoo.Builtins
+  alias Alchemoo.Database.Server, as: DBServer
   alias Alchemoo.Value
 
   setup do
@@ -137,6 +138,25 @@ defmodule Alchemoo.BuiltinsTest do
     assert Builtins.call(:valid, [Value.obj(9999)]) == Value.num(0)
   end
 
+  test "children traverses first_child_id/sibling_id chain" do
+    {:ok, obj} = DBServer.get_object(1)
+
+    expected =
+      Stream.unfold(obj.first_child_id, fn
+        -1 ->
+          nil
+
+        child_id ->
+          case DBServer.get_object(child_id) do
+            {:ok, child} -> {Value.obj(child_id), child.sibling_id}
+            {:error, _} -> nil
+          end
+      end)
+      |> Enum.to_list()
+
+    assert Builtins.call(:children, [Value.obj(1)]) == Value.list(expected)
+  end
+
   test "max_object returns highest object number" do
     {:num, max} = Builtins.call(:max_object, [])
     assert max >= 0
@@ -257,6 +277,34 @@ defmodule Alchemoo.BuiltinsTest do
 
     # Verify
     assert Builtins.call(:verb_args, [obj, verb]) ==
+             Value.list([Value.str("any"), Value.str("none"), Value.str("any")])
+  end
+
+  test "verb built-ins support numeric verb descriptors" do
+    obj = Value.obj(10)
+    idx = Value.num(1)
+
+    info = Builtins.call(:verb_info, [obj, idx])
+    assert match?({:list, [_, _, {:str, _}]}, info)
+
+    args = Builtins.call(:verb_args, [obj, idx])
+    assert match?({:list, [{:str, _}, {:str, _}, {:str, _}]}, args)
+  end
+
+  test "numeric verb descriptors resolve wildcard aliases" do
+    obj = Value.obj(10)
+    # #10 verb 2 is "wel*come @wel*come" in LambdaCore-like DBs.
+    idx = Value.num(2)
+
+    args = Builtins.call(:verb_args, [obj, idx])
+    assert match?({:list, [{:str, _}, {:str, _}, {:str, _}]}, args)
+  end
+
+  test "login command verbs keep LambdaCore argspec" do
+    # #10 verb 4 is co*nnect and should be command-style {any, none, any}
+    args = Builtins.call(:verb_args, [Value.obj(10), Value.num(4)])
+
+    assert args ==
              Value.list([Value.str("any"), Value.str("none"), Value.str("any")])
   end
 

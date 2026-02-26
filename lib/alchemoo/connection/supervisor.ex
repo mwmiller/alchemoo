@@ -41,9 +41,14 @@ defmodule Alchemoo.Connection.Supervisor do
   @doc "List all connection PIDs"
   def list_connections do
     children = DynamicSupervisor.which_children(__MODULE__)
-    Logger.debug("Supervisor children: #{inspect(children)}")
+
+    if trace_connections?() do
+      Logger.debug("Supervisor children: #{inspect(children)}")
+    end
 
     children
     |> Enum.map(fn {_, pid, _, _} -> pid end)
   end
+
+  defp trace_connections?, do: Application.get_env(:alchemoo, :trace_connections, false)
 end

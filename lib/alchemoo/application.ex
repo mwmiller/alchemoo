@@ -5,6 +5,10 @@ defmodule Alchemoo.Application do
 
   use Application
   require Logger
+  alias Alchemoo.Database.Server, as: DB
+  alias Alchemoo.Runtime
+  alias Alchemoo.TaskSupervisor
+  alias Alchemoo.Value
 
   @impl true
   def start(_type, _args) do
@@ -31,6 +35,8 @@ defmodule Alchemoo.Application do
 
     case Supervisor.start_link(children, opts) do
       {:ok, pid} ->
+        Task.start(fn -> run_startup_verb(0, "server_started") end)
+
         Logger.info("Alchemoo started successfully")
         {:ok, pid}
 
@@ -50,6 +56,45 @@ defmodule Alchemoo.Application do
 
       _ ->
         :ok
+    end
+  end
+
+  defp run_startup_verb(obj_id, verb_name) do
+    case DB.find_verb(obj_id, verb_name) do
+      {:ok, ^obj_id, verb} ->
+        runtime = Runtime.new(DB.get_snapshot())
+
+        env = %{
+          :runtime => runtime,
+          "player" => Value.obj(2),
+          "this" => Value.obj(obj_id),
+          "caller" => Value.obj(-1),
+          "verb" => Value.str(verb_name),
+          "args" => Value.list([])
+        }
+
+        task_opts = [
+          player: 2,
+          this: obj_id,
+          caller: -1,
+          perms: 2,
+          caller_perms: 2,
+          args: [],
+          verb_name: verb_name
+        ]
+
+        code = Enum.join(verb.code, "\n")
+
+        case TaskSupervisor.spawn_task(code, env, task_opts) do
+          {:ok, _pid} ->
+            :ok
+
+          {:error, reason} ->
+            Logger.error("Failed to spawn startup verb #{verb_name}: #{inspect(reason)}")
+        end
+
+      _ ->
+        Logger.warning("Startup verb ##{obj_id}:#{verb_name} not found")
     end
   end
 

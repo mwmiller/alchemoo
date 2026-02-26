@@ -25,6 +25,7 @@ defmodule Alchemoo.Interpreter do
 
       {:error, {:err, _} = err} ->
         Logger.debug("MOO Error: #{inspect(err)} in #{inspect(ast)}")
+        maybe_log_interpreter_context(ast, err, env)
         {:error, err}
 
       {:error, _} = err ->
@@ -178,15 +179,11 @@ defmodule Alchemoo.Interpreter do
          },
          env
        ) do
-    with {:ok, {:num, start_idx}, env1} <- eval(start_expr, env),
-         {:ok, {:num, end_idx}, env2} <- eval(end_expr, env1) do
-      items =
-        if start_idx <= end_idx do
-          Enum.map(start_idx..end_idx, &Value.num/1)
-        else
-          []
-        end
-
+    with {:ok, start_val, env1} <- eval(start_expr, env),
+         {:ok, end_val, env2} <- eval(end_expr, env1),
+         {:ok, start_idx} <- require_num(start_val),
+         {:ok, end_idx} <- require_num(end_val) do
+      items = if start_idx <= end_idx, do: Enum.map(start_idx..end_idx, &Value.num/1), else: []
       eval_for_list(var, items, body, env2)
     end
   end
@@ -285,11 +282,20 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp eval_range_with_dollar(start_expr, end_expr, coll, env_with_dollar) do
-    with {:ok, {:num, start_idx}, env2} <- eval(start_expr, env_with_dollar),
-         {:ok, {:num, end_idx}, env3} <- eval(end_expr, env2) do
+    with {:ok, start_val, env2} <- eval(start_expr, env_with_dollar),
+         {:ok, end_val, env3} <- eval(end_expr, env2),
+         {:ok, start_idx} <- require_num(start_val),
+         {:ok, end_idx} <- require_num(end_val) do
       case Value.range(coll, start_idx, end_idx) do
-        {:err, _} = err -> {:error, err}
-        val -> {:ok, val, env3}
+        {:err, _} = err ->
+          maybe_log_interpreter_debug(
+            "range failed coll=#{inspect(coll)} start=#{inspect(start_val)} end=#{inspect(end_val)}"
+          )
+
+          {:error, err}
+
+        val ->
+          {:ok, val, env3}
       end
     end
   end
@@ -366,6 +372,18 @@ defmodule Alchemoo.Interpreter do
     end
   end
 
+  defp perform_assignment(
+         %AST.Range{expr: target_expr, start: start_expr, end: end_expr},
+         val,
+         env
+       ) do
+    with {:ok, coll, env1} <- eval(target_expr, env) do
+      with_dollar(env1, coll, fn env_with_dollar ->
+        assign_range_target(target_expr, start_expr, end_expr, coll, val, env_with_dollar)
+      end)
+    end
+  end
+
   defp perform_assignment(%AST.ListExpr{elements: targets}, {:list, values}, env) do
     case destructure_list(targets, values, env) do
       {:ok, new_env} -> {:ok, {:list, values}, new_env}
@@ -374,6 +392,18 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp perform_assignment(%AST.ListExpr{}, _, _env), do: {:error, Value.err(:E_TYPE)}
+
+  defp assign_range_target(target_expr, start_expr, end_expr, coll, val, env) do
+    with {:ok, start_val, env2} <- eval(start_expr, env),
+         {:ok, end_val, env3} <- eval(end_expr, env2),
+         {:ok, start_idx} <- require_num(start_val),
+         {:ok, end_idx} <- require_num(end_val) do
+      case Value.set_range(coll, start_idx, end_idx, val) do
+        {:err, _} = err -> {:error, err}
+        new_coll -> perform_assignment(target_expr, new_coll, env3)
+      end
+    end
+  end
 
   defp destructure_list([], [], env), do: {:ok, env}
   defp destructure_list([], _, _env), do: {:error, Value.err(:E_ARGS)}
@@ -580,6 +610,38 @@ defmodule Alchemoo.Interpreter do
       destructure_list(rest_targets, [], env)
     end
   end
+
+  defp require_num({:num, n}), do: {:ok, n}
+  defp require_num(_), do: {:error, Value.err(:E_TYPE)}
+
+  defp maybe_log_interpreter_context(ast, err, env) do
+    if trace_interpreter_eval?() do
+      focus =
+        Map.take(env, [
+          "args",
+          "argstr",
+          "search",
+          "sofar",
+          "prefix",
+          "rest",
+          "candidate",
+          "orig_candidate",
+          "this",
+          "player",
+          "caller"
+        ])
+
+      Logger.debug(
+        "Interpreter context err=#{inspect(err)} ast=#{inspect(ast)} env=#{inspect(focus)}"
+      )
+    end
+  end
+
+  defp maybe_log_interpreter_debug(message) do
+    if trace_interpreter_eval?(), do: Logger.debug("Interpreter debug: " <> message)
+  end
+
+  defp trace_interpreter_eval?, do: Application.get_env(:alchemoo, :trace_interpreter_eval, false)
 
   defp eval_binop(:+, {:num, a}, {:num, b}), do: {:ok, Value.num(a + b)}
   defp eval_binop(:+, {:str, a}, {:str, b}), do: {:ok, Value.str(a <> b)}

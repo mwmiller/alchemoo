@@ -8,4 +8,13 @@ config :alchemoo, :network,
   ssh: %{enabled: false, port: 2222},
   websocket: %{enabled: false, port: 4000}
 
+# Optional high-volume trace logging (off by default).
+config :alchemoo,
+  trace_builtins: false,
+  trace_connections: false,
+  trace_runtime_verbs: false,
+  trace_runtime_properties: false,
+  trace_tasks: false,
+  trace_interpreter_eval: false
+
 import_config "#{config_env()}.exs"

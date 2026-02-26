@@ -178,7 +178,9 @@ defmodule Alchemoo.Task do
       started_at: System.monotonic_time(:second)
     }
 
-    Logger.debug("Initializing task #{inspect(task.id)} for verb '#{verb_name}' on ##{this_id}")
+    maybe_log_task_debug(
+      "Initializing task #{inspect(task.id)} for verb '#{verb_name}' on ##{this_id}"
+    )
 
     # Registry allows metadata-based lookups (e.g. all tasks for a player)
     Registry.register(Alchemoo.TaskRegistry, task.id, %{
@@ -218,11 +220,11 @@ defmodule Alchemoo.Task do
   def handle_continue(:execute, task) do
     context = Process.get(:task_context)
     verb_name = (context && context[:verb_name]) || "(unknown)"
-    Logger.debug("Starting execution of task #{inspect(task.id)} ('#{verb_name}')")
+    maybe_log_task_debug("Starting execution of task #{inspect(task.id)} ('#{verb_name}')")
 
     case execute_with_quota(task) do
       {:ok, result, new_task} ->
-        Logger.debug("Task #{inspect(task.id)} finished with result: #{inspect(result)}")
+        maybe_log_task_debug("Task #{inspect(task.id)} finished with result: #{inspect(result)}")
         handle_task_success(result, new_task)
 
       {:quota_exceeded, new_task} ->
@@ -339,6 +341,12 @@ defmodule Alchemoo.Task do
     Registry.select(Alchemoo.TaskRegistry, [
       {{:"$1", :"$2", :"$3"}, [], [{{:"$1", :"$2", :"$3"}}]}
     ])
+  end
+
+  defp maybe_log_task_debug(message) do
+    if Application.get_env(:alchemoo, :trace_tasks, false) do
+      Logger.debug(message)
+    end
   end
 
   @doc "List tasks for a specific player"

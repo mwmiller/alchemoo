@@ -13,6 +13,15 @@ defmodule Alchemoo.InterpreterTest do
     end
   end
 
+  defp eval_with_env(code, env) do
+    {:ok, ast, _} = Expression.parse(code)
+
+    case Interpreter.eval(ast, env) do
+      {:ok, val, new_env} -> {:ok, val, new_env}
+      error -> error
+    end
+  end
+
   test "evaluates number literals" do
     assert eval("42") == {:ok, Value.num(42)}
     assert eval("-10") == {:ok, Value.num(-10)}
@@ -83,5 +92,25 @@ defmodule Alchemoo.InterpreterTest do
   test "supports dollar in index expressions" do
     assert eval("\"hello\"[$]") == {:ok, Value.str("o")}
     assert eval("{1, 2, 3}[$]") == {:ok, Value.num(3)}
+  end
+
+  test "assignment expressions return assigned value" do
+    assert {:ok, {:num, 7}, env} = eval_with_env("x = 7", %{})
+    assert Map.get(env, "x") == Value.num(7)
+  end
+
+  test "optional list destructuring defaults are applied" do
+    env = %{"args" => Value.list([Value.str("wizard")])}
+
+    assert {:ok, {:list, [{:str, "wizard"}]}, new_env} =
+             eval_with_env("{search, ?sofar = 0} = args", env)
+
+    assert Map.get(new_env, "search") == Value.str("wizard")
+    assert Map.get(new_env, "sofar") == Value.num(0)
+  end
+
+  test "splice operator can target conditional expressions" do
+    {:ok, ast, []} = Expression.parse("@(1 ? {{2}} | {})")
+    assert %Alchemoo.AST.UnaryOp{op: :@, expr: %Alchemoo.AST.Conditional{}} = ast
   end
 end
