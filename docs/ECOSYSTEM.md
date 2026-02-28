@@ -13,9 +13,28 @@ These are the server implementations. Alchemoo aims to be a modern, BEAM-based a
 
 ### 1.2. Modern Reimplementations
 *   **EtaMOO (Haskell):** A multi-threaded Haskell implementation.
-*   **moor (Rust):** A systems-level reimplementation focusing on safety and performance.
+*   **moor (Rust):** A systems-level reimplementation written in Rust. [Source Code](https://codeberg.org/timbran/moor). Focuses on memory safety, high performance, and modern language extensions.
 
-## 2. MOO Core Databases (Starting Points)
+## 2. Modern Learnings & Architectural Patterns
+
+Modern implementations like **moor** and **ToastStunt** provide several key areas of learning for Alchemoo:
+
+### 2.1. Concurrency Models
+Traditional MOO is single-threaded. Modern servers take different approaches:
+*   **Optimistic Concurrency (MVCC):** moor uses a Multi-Version Concurrency Control model. Tasks run in parallel and are committed only if no conflicts occur.
+*   **BEAM Actor Model:** Alchemoo's current approach using lightweight processes per task provides isolation, but database-level transactions (perhaps inspired by MVCC) could further improve consistency.
+
+### 2.2. Language Extensions
+Modern cores expect more than just the basic MOO types:
+*   **Maps/Dictionaries:** Associative arrays are standard in modern MOO (Stunt/moor).
+*   **Anonymous Objects (Waifs):** Light-weight, garbage-collected objects that don't live in the permanent object tree.
+*   **Lambdas & Closures:** moor adds first-class anonymous functions to the MOO language.
+
+### 2.3. Developer Experience (DX)
+*   **IDE Integration:** moor includes a built-in web frontend providing an IDE-like experience for in-world programming via REST and WebSockets.
+*   **64-bit & Unicode:** Ensuring 64-bit integer support and native UTF-8 handling (already a priority for Alchemoo).
+
+## 3. MOO Core Databases (Starting Points)
 
 These are the `.db` files that provide the initial world state. They are essential for testing Alchemoo's parser and interpreter.
 

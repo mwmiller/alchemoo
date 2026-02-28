@@ -2,19 +2,22 @@
 
 A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM VM.
 
+**Version:** 0.6.0  
+
 ## Features
 
 - ✅ **Full MOO Database Support** - Loads LambdaCore, JHCore, and other MOO databases (Format 4)
 - ✅ **Complete MOO Language** - Parser and interpreter with all 5 value types
 - ✅ **Command Execution** - Full command parsing and verb execution pipeline
-- ✅ **Network Layer** - Telnet support (port 7777), SSH/WebSocket ready
+- ✅ **Network Layer** - Unified Telnet and SSH support with transport-agnostic handling
+- ✅ **Secure Auth** - SSH public key and password authentication with character integration
 - ✅ **Task System** - Concurrent task execution with tick quotas and limits
-- ✅ **Built-in Functions** - 140/140 implemented (100%), including all standard and extended MOO functions
+- ✅ **Built-in Functions** - 144/144 implemented, including standard, extended, and SSH management functions
 - ✅ **Unicode Support** - Full UTF-8 with grapheme-aware string operations
-- ✅ **Automatic Checkpoints** - Periodic saves with crash recovery
+- ✅ **Automatic Checkpoints** - Periodic saves with crash recovery (prime-number intervals)
 - ✅ **MOO Export** - Export databases in LambdaMOO Format 4
-- ✅ **Connection Management** - Multiple simultaneous players
-- ✅ **Registry-based Tracking** - Inspectable task management
+- ✅ **Connection Management** - Advanced session takeover and logout handling
+- ✅ **Fingerprint Art** - SSH key identification via 'drunken bishop' visualizations
 
 ## Status
 
@@ -29,7 +32,7 @@ Alchemoo is now a functional MOO server that can:
 - Handle multiple concurrent players
 - Automatically checkpoint and recover from crashes
 
-**Current Test Status (this branch, Feb 26, 2026):** 125 tests, 8 failing  
+**Current Test Status (this branch, Feb 26, 2026):** 144 tests, 0 failures  
 **Commits:** 70+
 
 ## Quick Start
@@ -153,13 +156,14 @@ elixir examples/task_demo.exs
 
 ### Phase 3: Polish & Enhancement
 - [x] Authentication system
+- [x] Configuration extraction (via config.exs)
+- [x] SSH support (Public Key & Password)
+- [x] Automated SSH key registration
 - [x] Object matching in commands
 - [ ] Preposition validation
-- [ ] Configuration extraction
 - [ ] Performance optimization
-- [ ] Fix current test regressions
-- [ ] SSH support
 - [ ] WebSocket support
+- [ ] Implement remaining network stubs (listen/unlisten)
 
 ## License
 

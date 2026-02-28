@@ -10,10 +10,6 @@ defmodule Alchemoo.Checkpoint.Server do
       # Where to store checkpoints
       dir: "$XDG_STATE_HOME/alchemoo/checkpoints",
       
-      # Which checkpoint to load on startup
-      # Options: :latest, :none, or specific filename
-      load_on_startup: :latest,  # or "checkpoint-2024-01-15-12-30-45.db"
-      
       # How often to checkpoint (milliseconds)
       interval: 300_000,  # 5 minutes
       
@@ -31,32 +27,26 @@ defmodule Alchemoo.Checkpoint.Server do
   alias Alchemoo.Database.Server
   alias Alchemoo.Database.Writer
 
-  # CONFIG: Should be extracted to config
-  # CONFIG: :alchemoo, :checkpoint, :dir
-  @default_checkpoint_dir "checkpoints"
-  # 307 seconds (prime) # CONFIG: :alchemoo, :checkpoint, :interval
-  @default_interval 307_000
-  # CONFIG: :alchemoo, :checkpoint, :keep_last
-  @default_keep_last 10
-  # CONFIG: :alchemoo, :checkpoint, :checkpoint_on_shutdown
-  @checkpoint_on_shutdown true
-  # CONFIG: :alchemoo, :checkpoint, :moo_export_interval (every Nth checkpoint)
-  @moo_export_interval 11
-  # CONFIG: :alchemoo, :moo_name (used in filenames)
-  @moo_name "alchemoo"
-  # CONFIG: :alchemoo, :checkpoint, :keep_last_moo_exports
-  @keep_last_moo_exports 5
+  defp default_checkpoint_dir, do: "checkpoints"
+  # ETF every ~5 mins (prime)
+  defp default_etf_interval, do: 307_000
+  # MOO every ~1 hour (prime)
+  defp default_moo_interval, do: 3_607_000
+  defp default_keep_last_etf, do: 10
+  defp default_moo_name, do: "alchemoo"
+  defp default_keep_last_moo, do: 5
 
   defstruct [
     :checkpoint_dir,
-    :interval,
-    :keep_last,
-    :timer_ref,
-    :moo_export_interval,
+    :etf_interval,
+    :moo_interval,
+    :keep_last_etf,
+    :etf_timer,
+    :moo_timer,
     :moo_name,
-    :keep_last_moo_exports,
-    last_checkpoint: nil,
-    checkpoint_count: 0
+    :keep_last_moo,
+    checkpoint_count: 0,
+    moo_count: 0
   ]
 
   ## Client API
@@ -69,7 +59,7 @@ defmodule Alchemoo.Checkpoint.Server do
     GenServer.call(__MODULE__, :checkpoint, :infinity)
   end
 
-  def export_moo(path) do
+  def export_moo(path \\ nil) do
     GenServer.call(__MODULE__, {:export_moo, path}, :infinity)
   end
 
@@ -94,12 +84,14 @@ defmodule Alchemoo.Checkpoint.Server do
     # Ensure checkpoint directory exists
     File.mkdir_p!(state.checkpoint_dir)
 
-    # Schedule first checkpoint
-    timer_ref = schedule_checkpoint(state.interval)
-    state = %{state | timer_ref: timer_ref}
+    # Schedule timers
+    etf_timer = schedule_next(:etf_checkpoint, state.etf_interval)
+    moo_timer = schedule_next(:moo_checkpoint, state.moo_interval)
+
+    state = %{state | etf_timer: etf_timer, moo_timer: moo_timer}
 
     Logger.info(
-      "Checkpoint server started (dir: #{state.checkpoint_dir}, interval: #{state.interval}ms, MOO export every #{state.moo_export_interval} checkpoints)"
+      "Checkpoint server started (dir: #{state.checkpoint_dir}, ETF interval: #{state.etf_interval}ms, MOO interval: #{state.moo_interval}ms)"
     )
 
     {:ok, state}
@@ -116,26 +108,22 @@ defmodule Alchemoo.Checkpoint.Server do
           config,
           :checkpoint_dir,
           :dir,
-          Path.join(base_dir, @default_checkpoint_dir)
+          Path.join(base_dir, default_checkpoint_dir())
         ),
-      interval: fetch_config(opts, config, :interval, :interval, @default_interval),
-      keep_last: fetch_config(opts, config, :keep_last, :keep_last, @default_keep_last),
-      moo_export_interval:
+      etf_interval: fetch_config(opts, config, :etf_interval, :interval, default_etf_interval()),
+      moo_interval:
+        fetch_config(opts, config, :moo_interval, :moo_interval, default_moo_interval()),
+      keep_last_etf:
+        fetch_config(opts, config, :keep_last_etf, :keep_last, default_keep_last_etf()),
+      moo_name:
+        opts[:moo_name] || Application.get_env(:alchemoo, :moo_name) || default_moo_name(),
+      keep_last_moo:
         fetch_config(
           opts,
           config,
-          :moo_export_interval,
-          :moo_export_interval,
-          @moo_export_interval
-        ),
-      moo_name: opts[:moo_name] || Application.get_env(:alchemoo, :moo_name) || @moo_name,
-      keep_last_moo_exports:
-        fetch_config(
-          opts,
-          config,
+          :keep_last_moo,
           :keep_last_moo_exports,
-          :keep_last_moo_exports,
-          @keep_last_moo_exports
+          default_keep_last_moo()
         )
     }
   end
@@ -153,7 +141,7 @@ defmodule Alchemoo.Checkpoint.Server do
 
   @impl true
   def handle_call(:checkpoint, _from, state) do
-    case do_checkpoint(state) do
+    case do_etf_checkpoint(state) do
       {:ok, filename, new_state} ->
         {:reply, {:ok, filename}, new_state}
 
@@ -164,26 +152,17 @@ defmodule Alchemoo.Checkpoint.Server do
 
   @impl true
   def handle_call({:export_moo, path}, _from, state) do
-    Logger.info("Exporting database to MOO format: #{path}")
+    path = path || generate_moo_path(state)
 
-    # Get database snapshot
-    db = Server.get_snapshot()
-
-    # Write to MOO format
-    case Writer.write_moo(db, path) do
-      :ok ->
-        Logger.info("Database exported to #{path}")
-        {:reply, {:ok, path}, state}
-
-      {:error, reason} ->
-        Logger.error("Failed to export database: #{inspect(reason)}")
-        {:reply, {:error, reason}, state}
+    case perform_moo_export(state, path) do
+      {:ok, path, new_state} -> {:reply, {:ok, path}, new_state}
+      {:error, reason} -> {:reply, {:error, reason}, state}
     end
   end
 
   @impl true
   def handle_call(:list_checkpoints, _from, state) do
-    checkpoints = list_checkpoint_files(state.checkpoint_dir)
+    checkpoints = list_all_files(state.checkpoint_dir)
     {:reply, checkpoints, state}
   end
 
@@ -206,32 +185,41 @@ defmodule Alchemoo.Checkpoint.Server do
   def handle_call(:info, _from, state) do
     info = %{
       checkpoint_dir: state.checkpoint_dir,
-      interval: state.interval,
-      keep_last: state.keep_last,
-      last_checkpoint: state.last_checkpoint,
+      etf_interval: state.etf_interval,
+      moo_interval: state.moo_interval,
+      keep_last_etf: state.keep_last_etf,
       checkpoint_count: state.checkpoint_count,
-      available_checkpoints: length(list_checkpoint_files(state.checkpoint_dir))
+      moo_count: state.moo_count
     }
 
     {:reply, info, state}
   end
 
   @impl true
-  def handle_info(:checkpoint, state) do
-    # Periodic checkpoint
-    case do_checkpoint(state) do
+  def handle_info(:etf_checkpoint, state) do
+    case do_etf_checkpoint(state) do
       {:ok, _filename, new_state} ->
-        # Check if we should also export to MOO format
-        new_state = maybe_export_moo(new_state)
-
-        # Schedule next checkpoint
-        timer_ref = schedule_checkpoint(state.interval)
-        {:noreply, %{new_state | timer_ref: timer_ref}}
+        timer = schedule_next(:etf_checkpoint, state.etf_interval)
+        {:noreply, %{new_state | etf_timer: timer}}
 
       {:error, _reason} ->
-        # Still schedule next checkpoint even if this one failed
-        timer_ref = schedule_checkpoint(state.interval)
-        {:noreply, %{state | timer_ref: timer_ref}}
+        timer = schedule_next(:etf_checkpoint, state.etf_interval)
+        {:noreply, %{state | etf_timer: timer}}
+    end
+  end
+
+  @impl true
+  def handle_info(:moo_checkpoint, state) do
+    path = generate_moo_path(state)
+
+    case perform_moo_export(state, path) do
+      {:ok, _, new_state} ->
+        timer = schedule_next(:moo_checkpoint, state.moo_interval)
+        {:noreply, %{new_state | moo_timer: timer}}
+
+      _ ->
+        timer = schedule_next(:moo_checkpoint, state.moo_interval)
+        {:noreply, %{state | moo_timer: timer}}
     end
   end
 
@@ -239,20 +227,11 @@ defmodule Alchemoo.Checkpoint.Server do
   def terminate(reason, state) do
     Logger.info("Checkpoint server stopping (reason: #{inspect(reason)})")
 
-    case @checkpoint_on_shutdown do
-      true ->
-        Logger.info("Performing final checkpoint before shutdown...")
+    config = Application.get_env(:alchemoo, :checkpoint, [])
 
-        case do_checkpoint(state) do
-          {:ok, filename, _state} ->
-            Logger.info("Final checkpoint saved: #{filename}")
-
-          {:error, reason} ->
-            Logger.error("Failed to save final checkpoint: #{inspect(reason)}")
-        end
-
-      false ->
-        :ok
+    if Keyword.get(config, :checkpoint_on_shutdown, true) do
+      Logger.info("Performing final ETF checkpoint before shutdown...")
+      do_etf_checkpoint(state)
     end
 
     :ok
@@ -260,181 +239,172 @@ defmodule Alchemoo.Checkpoint.Server do
 
   ## Private Helpers
 
-  defp do_checkpoint(state) do
+  defp do_etf_checkpoint(state) do
     start_time = System.monotonic_time(:millisecond)
-
-    # Ensure directory still exists (tests or external cleanup may remove it after init)
     File.mkdir_p!(state.checkpoint_dir)
 
-    # Get database snapshot
     db = Server.get_snapshot()
     stats = Server.stats()
 
-    Logger.info(
-      "Starting checkpoint ##{state.checkpoint_count + 1} (#{stats.object_count} objects)..."
-    )
+    if stats.object_count == 0 do
+      Logger.warning("Skipping ETF checkpoint: database is empty")
+      {:error, :empty_database}
+    else
+      Logger.info(
+        "ETF Checkpoint ##{state.checkpoint_count + 1} (#{stats.object_count} objects)..."
+      )
 
-    # Generate filename with timestamp
-    timestamp = DateTime.utc_now() |> DateTime.to_iso8601(:basic)
-    filename = "checkpoint-#{timestamp}.etf"
-    temp_path = Path.join(state.checkpoint_dir, "#{filename}.part")
-    final_path = Path.join(state.checkpoint_dir, filename)
+      timestamp = DateTime.utc_now() |> DateTime.to_iso8601(:basic)
+      filename = "checkpoint-#{timestamp}.etf"
+      temp_path = Path.join(state.checkpoint_dir, "#{filename}.part")
+      final_path = Path.join(state.checkpoint_dir, filename)
 
-    # Serialize database
-    content = serialize_database(db)
-    size_kb = byte_size(content) / 1024
+      content = :erlang.term_to_binary(db, [:compressed, minor_version: 2])
+      size_kb = byte_size(content) / 1024
 
-    # Write to temp file
+      case write_checkpoint_file(temp_path, final_path, content) do
+        :ok ->
+          elapsed = System.monotonic_time(:millisecond) - start_time
+
+          Logger.info(
+            "ETF Checkpoint complete: #{filename} (#{Float.round(size_kb, 1)} KB, #{elapsed}ms)"
+          )
+
+          cleanup_etf_checkpoints(state)
+          {:ok, filename, %{state | checkpoint_count: state.checkpoint_count + 1}}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  defp write_checkpoint_file(temp_path, final_path, content) do
     case File.write(temp_path, content) do
       :ok ->
-        # Atomic rename
         case File.rename(temp_path, final_path) do
           :ok ->
-            elapsed = System.monotonic_time(:millisecond) - start_time
-
-            Logger.info(
-              "Checkpoint ##{state.checkpoint_count + 1} complete: #{filename} (#{Float.round(size_kb, 1)} KB, #{elapsed}ms)"
-            )
-
-            # Cleanup old checkpoints
-            cleanup_old_checkpoints(state)
-
-            new_state = %{
-              state
-              | last_checkpoint: filename,
-                checkpoint_count: state.checkpoint_count + 1
-            }
-
-            {:ok, filename, new_state}
+            :ok
 
           {:error, reason} ->
-            Logger.error("Failed to rename checkpoint: #{inspect(reason)}")
+            Logger.error("Failed to rename ETF checkpoint: #{inspect(reason)}")
             File.rm(temp_path)
             {:error, reason}
         end
 
       {:error, reason} ->
-        Logger.error("Failed to write checkpoint: #{inspect(reason)}")
+        Logger.error("Failed to write ETF checkpoint: #{inspect(reason)}")
         {:error, reason}
     end
   end
 
-  defp serialize_database(db) do
-    # Use Erlang term format with options for better compatibility
-    # Options:
-    #   compressed: Smaller files
-    #   minor_version: 2 for better compatibility across ERTS versions
-    :erlang.term_to_binary(db, [:compressed, minor_version: 2])
-  end
+  defp perform_moo_export(state, path) do
+    db = Server.get_snapshot()
+    stats = Server.stats()
 
-  defp schedule_checkpoint(interval) do
-    Process.send_after(self(), :checkpoint, interval)
-  end
+    if stats.object_count == 0 do
+      Logger.warning("Skipping MOO export: database is empty")
+      {:error, :empty_database}
+    else
+      Logger.info("MOO Export ##{state.moo_count + 1} to #{path}...")
 
-  defp list_checkpoint_files(dir) do
-    case File.ls(dir) do
-      {:ok, files} ->
-        files
-        |> Enum.filter(fn f ->
-          String.starts_with?(f, "checkpoint-") and
-            (String.ends_with?(f, ".etf") or String.ends_with?(f, ".db"))
-        end)
-        # Most recent first
-        |> Enum.sort(:desc)
+      case Writer.write_moo(db, path) do
+        :ok ->
+          Logger.info("MOO export saved: #{Path.basename(path)}")
+          cleanup_moo_exports(state)
+          {:ok, path, %{state | moo_count: state.moo_count + 1}}
 
-      {:error, _} ->
-        []
+        {:error, reason} ->
+          Logger.error("MOO export failed: #{inspect(reason)}")
+          {:error, reason}
+      end
     end
   end
 
-  defp cleanup_old_checkpoints(state) do
-    case state.keep_last > 0 do
-      true ->
-        checkpoints = list_checkpoint_files(state.checkpoint_dir)
-        delete_excess_files(checkpoints, state.keep_last, state.checkpoint_dir, "checkpoint")
+  defp generate_moo_path(state) do
+    timestamp = DateTime.utc_now() |> DateTime.to_iso8601(:basic)
+    Path.join(state.checkpoint_dir, "#{state.moo_name}-#{timestamp}.db")
+  end
 
-      false ->
-        :ok
+  defp schedule_next(msg, interval) do
+    Process.send_after(self(), msg, interval)
+  end
+
+  defp list_all_files(dir) do
+    case File.ls(dir) do
+      {:ok, files} -> Enum.sort(files, :desc)
+      _ -> []
+    end
+  end
+
+  defp cleanup_etf_checkpoints(state) do
+    if state.keep_last_etf > 0 do
+      files =
+        list_all_files(state.checkpoint_dir)
+        |> Enum.filter(&String.ends_with?(&1, ".etf"))
+
+      delete_excess_files(files, state.keep_last_etf, state.checkpoint_dir, "ETF")
+    end
+  end
+
+  defp cleanup_moo_exports(state) do
+    if state.keep_last_moo > 0 do
+      files =
+        list_all_files(state.checkpoint_dir)
+        |> Enum.filter(
+          &(String.starts_with?(&1, state.moo_name) and String.ends_with?(&1, ".db"))
+        )
+
+      # Retention policy: Keep last N, BUT also ensure at least one from > 24h ago
+      now = System.system_time(:second)
+      one_day_ago = now - 86_400
+
+      {to_keep, to_maybe_delete} = Enum.split(files, state.keep_last_moo)
+      final_to_delete = identify_moo_files_to_delete(to_keep, to_maybe_delete, state, one_day_ago)
+
+      Enum.each(final_to_delete, fn f ->
+        File.rm(Path.join(state.checkpoint_dir, f))
+        Logger.info("Deleted old MOO export: #{f}")
+      end)
+    end
+  end
+
+  defp identify_moo_files_to_delete(to_keep, to_maybe_delete, state, one_day_ago) do
+    if Enum.any?(to_keep, &file_older_than?(&1, state.checkpoint_dir, one_day_ago)) do
+      to_maybe_delete
+    else
+      # Find the newest file in the delete list that IS older than 24h
+      case Enum.find(
+             to_maybe_delete,
+             &file_older_than?(&1, state.checkpoint_dir, one_day_ago)
+           ) do
+        # No old files at all
+        nil -> to_maybe_delete
+        old_one -> List.delete(to_maybe_delete, old_one)
+      end
+    end
+  end
+
+  defp file_older_than?(filename, dir, timestamp) do
+    case File.stat(Path.join(dir, filename)) do
+      {:ok, stat} ->
+        # stat.mtime is already a NaiveDateTime in newer Elixir
+        DateTime.from_naive!(stat.mtime, "Etc/UTC")
+        |> DateTime.to_unix()
+        |> Kernel.<(timestamp)
+
+      _ ->
+        false
     end
   end
 
   defp delete_excess_files(files, keep_count, dir, type_label) do
-    case length(files) > keep_count do
-      true ->
-        to_delete = Enum.drop(files, keep_count)
-
-        Enum.each(to_delete, fn filename ->
-          path = Path.join(dir, filename)
-          File.rm(path)
-          Logger.info("Deleted old #{type_label}: #{filename}")
-        end)
-
-      false ->
-        :ok
-    end
-  end
-
-  defp maybe_export_moo(state) do
-    # Export to MOO format every Nth checkpoint
-    case state.moo_export_interval > 0 and
-           rem(state.checkpoint_count, state.moo_export_interval) == 0 do
-      true -> perform_moo_export(state)
-      false -> state
-    end
-  end
-
-  defp perform_moo_export(state) do
-    Logger.info("Periodic MOO export (checkpoint ##{state.checkpoint_count})")
-
-    # Generate MOO export filename with moo_name
-    timestamp = DateTime.utc_now() |> DateTime.to_iso8601(:basic)
-    filename = "#{state.moo_name}-#{timestamp}.db"
-    path = Path.join(state.checkpoint_dir, filename)
-
-    # Get database and export
-    db = Server.get_snapshot()
-
-    case Writer.write_moo(db, path) do
-      :ok ->
-        Logger.info("MOO export saved: #{filename}")
-        cleanup_old_moo_exports(state)
-
-      {:error, reason} ->
-        Logger.error("MOO export failed: #{inspect(reason)}")
-    end
-
-    state
-  end
-
-  defp cleanup_old_moo_exports(state) do
-    case state.keep_last_moo_exports > 0 do
-      true ->
-        moo_exports = list_moo_export_files(state.checkpoint_dir, state.moo_name)
-
-        delete_excess_files(
-          moo_exports,
-          state.keep_last_moo_exports,
-          state.checkpoint_dir,
-          "MOO export"
-        )
-
-      false ->
-        :ok
-    end
-  end
-
-  defp list_moo_export_files(dir, moo_name) do
-    case File.ls(dir) do
-      {:ok, files} ->
-        files
-        |> Enum.filter(fn f ->
-          String.starts_with?(f, "#{moo_name}-") and String.ends_with?(f, ".db")
-        end)
-        # Most recent first
-        |> Enum.sort(:desc)
-
-      {:error, _} ->
-        []
+    if length(files) > keep_count do
+      Enum.drop(files, keep_count)
+      |> Enum.each(fn f ->
+        File.rm(Path.join(dir, f))
+        Logger.info("Deleted old #{type_label}: #{f}")
+      end)
     end
   end
 end

@@ -56,8 +56,9 @@ defmodule Alchemoo.Checkpoint.ServerTest do
       info = Checkpoint.info()
 
       assert is_binary(info.checkpoint_dir)
-      assert is_integer(info.interval)
-      assert is_integer(info.keep_last)
+      assert is_integer(info.etf_interval)
+      assert is_integer(info.moo_interval)
+      assert is_integer(info.keep_last_etf)
       assert is_integer(info.checkpoint_count)
     end
   end

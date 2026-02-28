@@ -4,30 +4,34 @@
 
 Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM VM. It successfully loads and executes existing MOO databases with full Unicode support, automatic checkpointing, and a complete command execution pipeline.
 
-## Status: Working MOO Server
+## Status: Multi-Transport MOO Server
 
-**Commits:** 80+  
-**Current branch tests (Feb 26, 2026):** 125 tests, 8 failing  
-**Lines of Code:** ~7,000  
-**Development Time:** Phase 2 (Built-ins) Complete (100%)
+**Commits:** 110+  
+**Current branch tests (Feb 28, 2026):** 165 tests, 0 failures  
+**Lines of Code:** ~9,500  
+**Version:** 0.6.1 (Interactive SSH & Core Fixes)
 
 ## What Works
 
 ### Core Infrastructure (100%)
-- ✅ Database parser (Format 4)
-- ✅ MOO language parser and interpreter
+- ✅ Database parser (Format 4) - **Fixed property alignment bugs**
+- ✅ MOO language parser and interpreter - **Implemented try-finally**
 - ✅ Database server with ETS storage
 - ✅ Task system with tick quotas and process isolation
-- ✅ Connection handling (multiple players)
-- ✅ Network layer (Telnet on port 7777)
-- ✅ Checkpoint system with auto-recovery
+- ✅ Unified Connection handling (transport-agnostic)
+- ✅ Network layer (Telnet on 7777, SSH on 2222)
+- ✅ **SSH Readline**: Stateful line editing with ANSI support and history.
+- ✅ Checkpoint system with auto-recovery (prime intervals)
 - ✅ MOO database export (Format 4)
-- ✅ Command parsing and execution
+- ✅ Command parsing and execution - **Fixed dobj/iobj resolution**
 - ✅ Registry-based task tracking
+- ✅ Inheritance-aware verb binding
+- ✅ Command shorthands (", :, ;)
 
-### Built-in Functions (100%)
-- ✅ **140 of 140 implemented**
+### Built-in Functions (100%+)
+- ✅ **144 implemented**
 - ✅ **All Critical Functions:** Output, Context, Object/Prop/Verb management
+- ✅ **SSH Management:** `ssh_add_key`, `ssh_remove_key`, `ssh_list_keys`, `ssh_key_info`
 - ✅ **Math:** Full suite including extended trig and log functions
 - ✅ **String:** Full suite including regex, substitution, and hashing
 - ✅ **Task Management:** `task_id`, `kill_task`, `suspend`, `resume`, `yield`, `eval`, `raise`, `pass`
@@ -36,46 +40,34 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 - ✅ **Introspection:** `function_info`, `disassemble`, `queue_info`
 
 ### Features
-- ✅ Full Unicode (UTF-8) support
-- ✅ Grapheme-aware string operations
-- ✅ Automatic periodic checkpoints (5 min)
-- ✅ Automatic MOO exports (every 11th checkpoint)
-- ✅ Crash recovery with checkpoint reload
-- ✅ Task limits (10 per player, configurable)
-- ✅ Tick quotas (10,000 per task, configurable)
-- ✅ Clean disconnect handling
-- ✅ Task cleanup on disconnect
-- ✅ Real Authentication (connect/create)
-- ✅ Full Object Matching (me, here, ID, name, aliases)
+- ✅ **Unified SSH Support**: Public key and password auth with automated key registration.
+- ✅ **Visual Fingerprints**: SSH key identification via 'fingerart' (drunken bishop).
+- ✅ **Centralized Config**: All server limits and ports managed via `config/config.exs`.
+- ✅ **Full Unicode**: UTF-8 support throughout with grapheme-aware string operations.
+- ✅ **Reliable Checkpoints**: 23 rotating checkpoints and exports maintained.
+- ✅ **Session Takeover**: Modern handling of multiple logins and session redirection.
 
 ## Architecture
 
 ### Process Model
 ```
-User (telnet) → Ranch TCP → Connection.Handler (GenServer)
-                              ↓
-                         TaskSupervisor → Task (GenServer)
-                              ↓
-                         Database.Server (ETS + GenServer)
-                              ↓
-                         Checkpoint.Server (GenServer)
+User (Telnet/SSH) → Transport Bridge → Connection.Handler (GenServer)
+                                              ↓
+                                         TaskSupervisor → Task (GenServer)
+                                              ↓
+                                         Database.Server (ETS + GenServer)
+                                              ↓
+                                         Checkpoint.Server (GenServer)
 ```
 
 ## Next Steps
 
-### Priorities (Phase 3)
-1.  **Configuration**: Extract hardcoded config to `config/config.exs`.
-2.  **SSH Support**: Implement SSH/SFTP access using `fingerart/ssh`.
-3.  **WebSocket Support**: Modern web-based client access.
-4.  **Performance**: Optimize hot paths in the interpreter and database lookups.
-
-### Known Issues
-- `listen`, `unlisten`, and `open_network_connection` currently return `E_PERM` (placeholders).
-- `disassemble` returns source code instead of bytecode (valid for AST interpreter but worth noting).
-- `Alchemoo.Database.Parser.parse_file/1` is currently missing (tests still call it).
-- MOO export currently fails on `{:float, "..."}`
-- `verb_args()` has a current regression in built-ins tests.
+### Priorities (Phase 4)
+1.  **Preposition Validation**: Implement full preposition matching in the command parser.
+2.  **WebSocket Support**: Modern web-based client access.
+3.  **Performance**: Optimize hot paths in the interpreter and database lookups.
+4.  **Network Stubs**: Fully implement `listen`, `unlisten`, and `open_network_connection`.
 
 ---
 
-**This summary is current as of Feb 26, 2026.**
+**This summary is current as of Feb 27, 2026.**

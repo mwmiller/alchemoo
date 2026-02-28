@@ -4,7 +4,7 @@ defmodule Alchemoo.MixProject do
   def project do
     [
       app: :alchemoo,
-      version: "0.4.0",
+      version: "0.6.2",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -16,7 +16,7 @@ defmodule Alchemoo.MixProject do
 
   def application do
     [
-      extra_applications: [:logger, :crypto],
+      extra_applications: [:logger, :crypto, :ssh],
       mod: {Alchemoo.Application, []}
     ]
   end
@@ -25,9 +25,9 @@ defmodule Alchemoo.MixProject do
     [
       {:nimble_parsec, "~> 1.4"},
       {:ranch, "~> 2.1"},
-      {:credo, "~> 1.7", only: [:dev, :test], runtime: false}
+      {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       # Optional: For SSH fingerprint visualization (drunken bishop)
-      # {:fingerart, "~> 1.0", optional: true}  # CONFIG: Uncomment when SSH is implemented
+      {:fingerart, "~> 1.0"}
     ]
   end
 

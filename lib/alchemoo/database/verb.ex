@@ -37,8 +37,12 @@ defmodule Alchemoo.Database.Verb do
 
   @doc """
   Match a single verb name pattern (e.g. "co*nnect") against input.
+  MOO verb matching is case-insensitive.
   """
   def match_pattern?(pattern, input) do
+    pattern = String.downcase(pattern)
+    input = String.downcase(input)
+
     case String.split(pattern, "*", parts: 2) do
       [exact] ->
         exact == input

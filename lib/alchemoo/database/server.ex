@@ -135,15 +135,27 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def init(opts) do
-    core_db_path =
-      case Keyword.get(opts, :core_db) do
-        nil -> Application.get_env(:alchemoo, :core_db)
-        opt_db -> opt_db
+    {db, db_path} =
+      case Keyword.get(opts, :db) do
+        nil ->
+          core_db_path =
+            case Keyword.get(opts, :core_db) do
+              nil -> Application.get_env(:alchemoo, :core_db)
+              opt_db -> opt_db
+            end
+
+          load_startup_db(opts, core_db_path)
+
+        provided_db ->
+          {provided_db, "provided"}
       end
 
-    {db, db_path} = load_startup_db(opts, core_db_path)
-
     {:ok, %__MODULE__{db: db, db_path: db_path}}
+  end
+
+  @impl true
+  def handle_call({:load_db, db}, _from, state) do
+    {:reply, :ok, %{state | db: db, db_path: "provided"}}
   end
 
   @impl true
@@ -192,23 +204,17 @@ defmodule Alchemoo.Database.Server do
 
   @impl true
   def handle_call({:get_property, obj_id, prop_name}, _from, state) do
-    case Map.has_key?(state.db.objects, obj_id) do
-      false ->
-        {:reply, {:error, :E_INVIND}, state}
-
-      true ->
-        case find_property_recursive(state.db.objects, obj_id, prop_name) do
-          {:ok, value} -> {:reply, {:ok, value}, state}
-          nil -> {:reply, {:error, :E_PROPNF}, state}
-        end
+    case Map.get(state.db.objects, obj_id) do
+      nil -> {:reply, {:error, :E_INVIND}, state}
+      obj -> handle_get_property(obj, prop_name, state)
     end
   end
 
   @impl true
   def handle_call({:set_property, obj_id, prop_name, value}, _from, state) do
-    case perform_set_property(state, obj_id, prop_name, value) do
-      {:ok, new_state} -> {:reply, :ok, new_state}
-      {:error, err} -> {:reply, {:error, err}, state}
+    case Map.get(state.db.objects, obj_id) do
+      nil -> {:reply, {:error, :E_INVIND}, state}
+      obj -> handle_set_property(obj, prop_name, value, state)
     end
   end
 
@@ -350,7 +356,8 @@ defmodule Alchemoo.Database.Server do
         {:reply, {:error, :E_INVIND}, state}
 
       obj ->
-        new_props = Enum.reject(obj.properties, &(&1.name == name))
+        search_name = String.downcase(name)
+        new_props = Enum.reject(obj.properties, &(String.downcase(&1.name) == search_name))
         new_obj = %{obj | properties: new_props}
         new_db = %{state.db | objects: Map.put(state.db.objects, obj_id, new_obj)}
         {:reply, :ok, %{state | db: new_db}}
@@ -556,8 +563,12 @@ defmodule Alchemoo.Database.Server do
   defp load_first_available(paths) do
     Enum.reduce_while(paths, {:error, []}, fn path, {:error, rev_attempts} ->
       case load_database_file(path) do
-        {:ok, db, count} ->
+        {:ok, db, count} when count > 0 ->
           {:halt, {:ok, db, path, count}}
+
+        {:ok, _, 0} ->
+          # Skip empty DBs
+          {:cont, {:error, [{path, :empty_database} | rev_attempts]}}
 
         {:error, reason} ->
           {:cont, {:error, [{path, reason} | rev_attempts]}}
@@ -600,12 +611,19 @@ defmodule Alchemoo.Database.Server do
   end
 
   defp parse_etf(content) do
-    case :erlang.binary_to_term(content, [:safe]) do
-      %Database{} = db -> {:ok, db, map_size(db.objects)}
-      _ -> {:error, :invalid_checkpoint_format}
+    # Remove [:safe] to allow loading atoms that may not be in the table yet (e.g. prepositions)
+    case :erlang.binary_to_term(content) do
+      %Database{} = db ->
+        {:ok, db, map_size(db.objects)}
+
+      other ->
+        Logger.warning("ETF content did not match %Database{} struct: #{inspect(other)}")
+        {:error, :invalid_checkpoint_format}
     end
   rescue
-    _ -> {:error, :invalid_checkpoint_format}
+    e ->
+      Logger.error("Failed to parse ETF: #{inspect(e)}")
+      {:error, :invalid_checkpoint_format}
   end
 
   defp parse_moo(content) do
@@ -623,14 +641,18 @@ defmodule Alchemoo.Database.Server do
   end
 
   defp find_prop(obj, name) do
-    case Enum.find(obj.properties, &(&1.name == name)) do
+    search_name = String.downcase(name)
+
+    case Enum.find(obj.properties, &(String.downcase(&1.name) == search_name)) do
       nil -> {:error, :E_PROPNF}
       prop -> {:ok, prop}
     end
   end
 
   defp find_prop_idx(obj, name) do
-    case Enum.find_index(obj.properties, &(&1.name == name)) do
+    search_name = String.downcase(name)
+
+    case Enum.find_index(obj.properties, &(String.downcase(&1.name) == search_name)) do
       nil -> {:error, :E_PROPNF}
       idx -> {:ok, idx}
     end
@@ -657,7 +679,9 @@ defmodule Alchemoo.Database.Server do
 
   defp perform_set_property(state, obj_id, prop_name, value) do
     with {:ok, obj} <- get_obj(state, obj_id) do
-      case Enum.find_index(obj.properties, &(&1.name == prop_name)) do
+      search_name = String.downcase(prop_name)
+
+      case Enum.find_index(obj.properties, &(String.downcase(&1.name) == search_name)) do
         nil ->
           # Update overridden_properties map
           new_overridden =
@@ -750,30 +774,79 @@ defmodule Alchemoo.Database.Server do
         nil
 
       obj ->
-        lookup_prop_step(objects, obj, prop_name)
+        case lookup_builtin_prop(obj, prop_name) do
+          {:ok, _} = res -> res
+          :not_builtin -> lookup_prop_step(objects, obj, prop_name)
+        end
+    end
+  end
+
+  defp lookup_builtin_prop(obj, prop_name) do
+    case String.downcase(prop_name) do
+      "name" -> {:ok, {:str, obj.name}}
+      "owner" -> {:ok, {:obj, obj.owner}}
+      "location" -> {:ok, {:obj, obj.location}}
+      "contents" -> {:ok, {:list, Enum.map(obj.contents, &Alchemoo.Value.obj/1)}}
+      "parent" -> {:ok, {:obj, obj.parent}}
+      _ -> :not_builtin
     end
   end
 
   defp lookup_prop_step(objects, obj, prop_name) do
     # Check local properties first
-    case Enum.find(obj.properties, &(&1.name == prop_name)) do
+    search_name = String.downcase(prop_name)
+
+    case Enum.find(obj.properties, &(String.downcase(&1.name) == search_name)) do
       %Property{value: :clear} ->
-        find_property_recursive(objects, obj.parent, prop_name)
+        find_property_recursive(objects, obj.parent, search_name)
 
       prop when not is_nil(prop) ->
         {:ok, prop.value}
 
       nil ->
-        lookup_overridden_prop(objects, obj, prop_name)
+        lookup_overridden_prop(objects, obj, search_name)
     end
   end
 
-  defp lookup_overridden_prop(objects, obj, prop_name) do
+  defp lookup_overridden_prop(objects, obj, search_name) do
     # Check overridden inherited properties
-    case Map.get(obj.overridden_properties, prop_name) do
-      nil -> find_property_recursive(objects, obj.parent, prop_name)
-      %Property{value: :clear} -> find_property_recursive(objects, obj.parent, prop_name)
-      prop -> {:ok, prop.value}
+    case Enum.find(obj.overridden_properties, fn {k, _v} -> String.downcase(k) == search_name end) do
+      nil -> find_property_recursive(objects, obj.parent, search_name)
+      {_k, %Property{value: :clear}} -> find_property_recursive(objects, obj.parent, search_name)
+      {_k, prop} -> {:ok, prop.value}
+    end
+  end
+
+  defp handle_get_property(obj, prop_name, state) do
+    case lookup_builtin_prop(obj, prop_name) do
+      {:ok, value} ->
+        {:reply, {:ok, value}, state}
+
+      :not_builtin ->
+        case find_property_recursive(state.db.objects, obj.id, prop_name) do
+          {:ok, value} -> {:reply, {:ok, value}, state}
+          nil -> {:reply, {:error, :E_PROPNF}, state}
+        end
+    end
+  end
+
+  defp handle_set_property(obj, prop_name, value, state) do
+    case String.downcase(prop_name) do
+      "name" ->
+        {:reply, :ok, update_obj(state, obj.id, %{obj | name: Alchemoo.Value.to_elixir(value)})}
+
+      "owner" ->
+        {:reply, :ok, update_obj(state, obj.id, %{obj | owner: Alchemoo.Value.to_elixir(value)})}
+
+      "location" ->
+        {:reply, :ok,
+         update_obj(state, obj.id, %{obj | location: Alchemoo.Value.to_elixir(value)})}
+
+      _ ->
+        case perform_set_property(state, obj.id, prop_name, value) do
+          {:ok, new_state} -> {:reply, :ok, new_state}
+          {:error, err} -> {:reply, {:error, err}, state}
+        end
     end
   end
 end

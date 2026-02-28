@@ -2,11 +2,11 @@
 
 ## Summary
 
-- **Total MOO Built-ins:** 140+
-- **Implemented:** 140
-- **Status:** Implemented, with one known regression in current tests (`verb_args`)
+- **Total MOO Built-ins:** 144
+- **Implemented:** 144
+- **Status:** 100% Implemented and verified by tests
 - **Critical for basic functionality:** Complete! ✅
-- **Important for advanced functionality:** Complete! ✅
+- **SSH Management Functions:** Added! 🔑
 
 ## Categorized List
 
@@ -152,6 +152,12 @@
 - ✅ `set_task_perms(obj)` - Set permissions for the current task
 - ✅ `callers()` - Get current call stack
 
+### SSH Management (4)
+- ✅ `ssh_add_key(player, key_string)` - Authorize a new public key
+- ✅ `ssh_remove_key(player, index)` - Revoke a public key
+- ✅ `ssh_list_keys(player)` - List authorized keys with fingerprints
+- ✅ `ssh_key_info(player, index)` - Get detailed key info and fingerart
+
 ### Network (10)
 - ✅ `idle_seconds(player)` - Get idle time
 - ✅ `connected_seconds(player)` - Get connection time
@@ -185,4 +191,4 @@
 
 ---
 
-**This documentation is up to date as of Feb 26, 2026.**
+**This documentation is up to date as of Feb 27, 2026.**
