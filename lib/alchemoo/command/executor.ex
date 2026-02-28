@@ -19,6 +19,17 @@ defmodule Alchemoo.Command.Executor do
     {:error, reason} - Failed to execute
   """
   def execute(command, player_id, handler_pid) do
+    command = String.trim_leading(command)
+
+    case command do
+      ";" <> code -> execute_shorthand_eval(code, player_id, handler_pid)
+      "\"" <> text -> execute_shorthand_say(text, player_id, handler_pid)
+      ":" <> text -> execute_shorthand_emote(text, player_id, handler_pid)
+      _ -> execute_normal_command(command, player_id, handler_pid)
+    end
+  end
+
+  defp execute_normal_command(command, player_id, handler_pid) do
     case execute_via_core_do_command(command, player_id, handler_pid) do
       :fallback ->
         execute_with_local_parser(command, player_id, handler_pid)
@@ -26,6 +37,60 @@ defmodule Alchemoo.Command.Executor do
       result ->
         result
     end
+  end
+
+  defp execute_shorthand_eval(code, player_id, handler_pid) do
+    # Direct eval built-in call
+    # We must provide the correct environment with me/here/player
+    db = DB.get_snapshot()
+
+    here_id =
+      case Map.fetch(db.objects, player_id) do
+        {:ok, obj} -> obj.location
+        _ -> -1
+      end
+
+    runtime = Runtime.new(db)
+
+    env = %{
+      :runtime => runtime,
+      "me" => Value.obj(player_id),
+      "player" => Value.obj(player_id),
+      "here" => Value.obj(here_id),
+      "this" => Value.obj(player_id),
+      "caller" => Value.obj(player_id)
+    }
+
+    task_opts = [
+      player: player_id,
+      this: player_id,
+      caller: player_id,
+      handler_pid: handler_pid,
+      verb_name: "eval"
+    ]
+
+    # Prefix with 'return' if not a statement
+    code =
+      if String.starts_with?(String.trim(code), ";"), do: code, else: "return " <> code <> ";"
+
+    case TaskSupervisor.spawn_task(code, env, task_opts) do
+      {:ok, pid} ->
+        {:ok, pid}
+
+      {:error, reason} ->
+        send_error(handler_pid, "Error executing eval: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  defp execute_shorthand_say(text, player_id, handler_pid) do
+    # Map to 'say text'
+    execute_with_local_parser("say " <> text, player_id, handler_pid)
+  end
+
+  defp execute_shorthand_emote(text, player_id, handler_pid) do
+    # Map to 'emote text'
+    execute_with_local_parser("emote " <> text, player_id, handler_pid)
   end
 
   defp execute_via_core_do_command(command, player_id, handler_pid) do
