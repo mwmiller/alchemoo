@@ -349,6 +349,7 @@ defmodule Alchemoo.Builtins do
     eval_env =
       env
       |> Map.put("me", Value.obj(player_id))
+      |> Map.put("player", Value.obj(player_id))
       |> Map.put("here", Value.obj(here_id))
 
     opts = Enum.into(context_map, [])

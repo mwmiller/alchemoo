@@ -67,10 +67,21 @@ defmodule Alchemoo.Command.Parser do
   4. Indirect object verbs (if it's a valid object)
   """
   def find_verb_target(parsed, player_id, db) do
-    # Try player first
+    # Search order:
+    # 1. Player's verbs
+    # 2. Player's location verbs
+    # 3. Direct object verbs
+    # 4. Indirect object verbs
+    # 5. System object #0
     with {:error, :E_VERBNF} <- find_on_object(player_id, parsed.verb, db),
          {:ok, player_obj} <- Map.fetch(db.objects, player_id),
-         {:error, :E_VERBNF} <- find_on_object(player_obj.location, parsed.verb, db) do
+         {:error, :E_VERBNF} <- find_on_object(player_obj.location, parsed.verb, db),
+         # Add check for dobj if it was resolved to an object
+         {:error, :E_VERBNF} <- find_on_object(Map.get(parsed, :dobj_id, -1), parsed.verb, db),
+         # Add check for iobj if it was resolved to an object
+         {:error, :E_VERBNF} <- find_on_object(Map.get(parsed, :iobj_id, -1), parsed.verb, db),
+         # Final fallback to #0
+         {:error, :E_VERBNF} <- find_on_object(0, parsed.verb, db) do
       {:error, :E_VERBNF}
     else
       {:ok, obj_id, verb_name} -> {:ok, obj_id, verb_name}
