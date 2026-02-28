@@ -6,7 +6,7 @@
 - **Key Fixes**:
     - **Truthiness**: Objects are now correctly truthy per MOO spec.
     - **Property Alignment**: Fixed Format 4 resolution rule (local properties before inherited).
-    - **Login**: First-time login experience is clean; `previous_connection` is initialized to a truthy list.
+    - **Login**: Connection metadata (`last_connect_time`, `previous_connection`) is correctly rotated upon login, ensuring `@last-connection` shows accurate history.
     - **Checkpointing**: Robustness added to prevent empty (0 object) checkpoints from being saved or loaded.
 - **New Features**:
     - **SSH Readline**: Stateful line editing with ANSI support and history.
