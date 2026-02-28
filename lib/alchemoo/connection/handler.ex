@@ -353,31 +353,21 @@ defmodule Alchemoo.Connection.Handler do
     # Initialize connection properties in DB before core verbs see them
     now = System.system_time(:second)
 
-    # previous_connection must be truthy (non-zero) to avoid "Something was broken"
-    # Standard format is {time, host}
-    case DB.get_property(player_id, "previous_connection") do
-      {:ok, {:num, 0}} ->
-        # First time login - set a dummy list to satisfy the truthiness check
-        DB.set_property(
-          player_id,
-          "previous_connection",
-          Value.list([Value.num(0), Value.str("initial")])
-        )
+    # Standard MOO previous_connection format is {time, host_string}
+    last_time =
+      case DB.get_property(player_id, "last_connect_time") do
+        {:ok, {:num, t}} -> Value.num(t)
+        _ -> Value.num(0)
+      end
 
-      {:ok, _val} ->
-        # Preserve whatever was there if it's not 0
-        :ok
+    # Update previous_connection with the OLD data
+    DB.set_property(
+      player_id,
+      "previous_connection",
+      Value.list([last_time, Value.str(conn.peer_info)])
+    )
 
-      _ ->
-        # Property missing? Set a safe default
-        DB.set_property(
-          player_id,
-          "previous_connection",
-          Value.list([Value.num(0), Value.str("initial")])
-        )
-    end
-
-    # Also update last_connect_time
+    # Update last_connect_time with the NEW data
     DB.set_property(player_id, "last_connect_time", Value.num(now))
 
     Logger.info("Connection #{conn.player_id} logged in as ##{player_id}")
