@@ -9,6 +9,7 @@ defmodule Alchemoo.InterpreterTest do
 
     case Interpreter.eval(ast) do
       {:ok, val, _env} -> {:ok, val}
+      {:error, err, _env} -> {:error, err}
       error -> error
     end
   end
@@ -18,6 +19,7 @@ defmodule Alchemoo.InterpreterTest do
 
     case Interpreter.eval(ast, env) do
       {:ok, val, new_env} -> {:ok, val, new_env}
+      {:error, err, new_env} -> {:error, err, new_env}
       error -> error
     end
   end
@@ -81,7 +83,7 @@ defmodule Alchemoo.InterpreterTest do
 
   test "handles undefined variables" do
     {:ok, ast, _} = Expression.parse("undefined_var")
-    assert Interpreter.eval(ast, %{}) == {:error, Value.err(:E_VARNF)}
+    assert Interpreter.eval(ast, %{}) == {:error, Value.err(:E_VARNF), %{}}
   end
 
   test "supports dollar in range expressions" do

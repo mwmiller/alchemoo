@@ -138,7 +138,7 @@ defmodule Alchemoo.AST do
 
   defmodule Except do
     @moduledoc false
-    defstruct [:error_var, :body]
+    defstruct [:error_var, :codes, :body]
   end
 
   defmodule Catch do

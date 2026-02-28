@@ -322,8 +322,9 @@ defmodule Alchemoo.Database.Parser do
 
       parent_props = if obj.parent >= 0, do: resolved[obj.parent].all_properties, else: []
 
-      # RULE: local properties first, then inherited
-      {local_values, inherited_values} = Enum.split(obj.temp_values, length(obj.properties))
+      # RULE: local properties come BEFORE inherited properties in the values list.
+      num_local = length(obj.properties)
+      {local_values, inherited_values} = Enum.split(obj.temp_values, num_local)
 
       local_properties =
         Enum.zip(obj.properties, local_values)
@@ -331,6 +332,7 @@ defmodule Alchemoo.Database.Parser do
           %{p | value: v, owner: o, perms: Integer.to_string(perms)}
         end)
 
+      # Match inherited values to parent properties by order
       overridden =
         Enum.zip(parent_props, inherited_values)
         |> Enum.into(%{}, fn {p, {v, o, perms}} ->

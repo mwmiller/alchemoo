@@ -5,9 +5,7 @@ defmodule Alchemoo.Connection.Supervisor do
   use DynamicSupervisor
   require Logger
 
-  # CONFIG: Should be extracted to config
-  # CONFIG: :alchemoo, :max_connections
-  @max_connections 1000
+  defp max_connections, do: Application.get_env(:alchemoo, :max_connections, 1000)
 
   def start_link(init_arg) do
     DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
@@ -17,18 +15,19 @@ defmodule Alchemoo.Connection.Supervisor do
   def init(_init_arg) do
     DynamicSupervisor.init(
       strategy: :one_for_one,
-      max_children: @max_connections
+      max_children: max_connections()
     )
   end
 
   @doc "Start a new connection handler"
-  def start_connection(socket, transport \\ :ranch_tcp) do
-    case count_connections() >= @max_connections do
+  def start_connection(socket, transport \\ :ranch_tcp, opts \\ []) do
+    case count_connections() >= max_connections() do
       true ->
         {:error, :too_many_connections}
 
       false ->
-        spec = {Alchemoo.Connection.Handler, socket: socket, transport: transport}
+        handler_opts = [socket: socket, transport: transport] ++ opts
+        spec = {Alchemoo.Connection.Handler, handler_opts}
         DynamicSupervisor.start_child(__MODULE__, spec)
     end
   end

@@ -13,6 +13,8 @@ defmodule Alchemoo.Command.Parser do
     give ball to wizard
   """
 
+  alias Alchemoo.Database.Resolver
+
   @doc """
   Parse a command string into a verb call structure.
 
@@ -20,23 +22,38 @@ defmodule Alchemoo.Command.Parser do
     {:ok, %{verb: verb, dobj: dobj, prep: prep, iobj: iobj}}
   """
   def parse(command) do
+    command = String.trim_leading(command)
+    {verb, raw_argstr} = extract_verb_and_argstr(command)
+
     words = String.split(command, ~r/\s+/, trim: true)
 
     case words do
       [] ->
         {:error, :empty_command}
 
-      [verb] ->
-        {:ok, %{verb: verb, dobj: nil, prep: nil, iobj: nil}}
+      [_verb | args_only] ->
+        # We still return the tokenized version for dobj/prep/iobj mapping,
+        # but we also return the raw argstr.
+        parsed = %{
+          verb: verb,
+          argstr: raw_argstr,
+          dobj: Enum.at(args_only, 0),
+          prep: Enum.at(args_only, 1),
+          iobj: Enum.at(args_only, 2)
+        }
 
-      [verb, dobj] ->
-        {:ok, %{verb: verb, dobj: dobj, prep: nil, iobj: nil}}
+        {:ok, parsed}
+    end
+  end
 
-      [verb, dobj, prep] ->
-        {:ok, %{verb: verb, dobj: dobj, prep: prep, iobj: nil}}
+  defp extract_verb_and_argstr("\"" <> rest), do: {"say", rest}
+  defp extract_verb_and_argstr(":" <> rest), do: {"emote", rest}
+  defp extract_verb_and_argstr(";" <> rest), do: {"eval", rest}
 
-      [verb, dobj, prep, iobj | _rest] ->
-        {:ok, %{verb: verb, dobj: dobj, prep: prep, iobj: iobj}}
+  defp extract_verb_and_argstr(command) do
+    case String.split(command, ~r/\s+/, parts: 2) do
+      [verb, rest] -> {verb, rest}
+      [verb] -> {verb, ""}
     end
   end
 
@@ -46,12 +63,27 @@ defmodule Alchemoo.Command.Parser do
   Search order:
   1. Player's verbs
   2. Player's location verbs
-  3. Direct object verbs
-  4. Indirect object verbs
+  3. Direct object verbs (if it's a valid object)
+  4. Indirect object verbs (if it's a valid object)
   """
-  def find_verb_target(parsed, player_id, _db) do
-    # For now, just try the player
-    # FUTURE: Implement full search order
-    {:ok, player_id, parsed.verb}
+  def find_verb_target(parsed, player_id, db) do
+    # Try player first
+    with {:error, :E_VERBNF} <- find_on_object(player_id, parsed.verb, db),
+         {:ok, player_obj} <- Map.fetch(db.objects, player_id),
+         {:error, :E_VERBNF} <- find_on_object(player_obj.location, parsed.verb, db) do
+      {:error, :E_VERBNF}
+    else
+      {:ok, obj_id, verb_name} -> {:ok, obj_id, verb_name}
+      _ -> {:error, :E_VERBNF}
+    end
   end
+
+  defp find_on_object(obj_id, verb_name, db) when obj_id >= 0 do
+    case Resolver.find_verb(db, obj_id, verb_name) do
+      {:ok, _found_id, _verb} -> {:ok, obj_id, verb_name}
+      _ -> {:error, :E_VERBNF}
+    end
+  end
+
+  defp find_on_object(_obj_id, _verb_name, _db), do: {:error, :E_VERBNF}
 end

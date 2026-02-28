@@ -172,20 +172,8 @@ defmodule Alchemoo.Parser.Expression do
   defp parse_additive_rest(left, rest), do: {:ok, left, rest}
 
   # Multiplicative operators: *, /, %
-  defp parse_multiplicative(["!" | rest]) do
-    with {:ok, val, rest} <- parse_primary(rest) do
-      {:ok, %AST.UnaryOp{op: :!, expr: val}, rest}
-    end
-  end
-
-  defp parse_multiplicative(["-" | rest]) do
-    with {:ok, val, rest} <- parse_primary(rest) do
-      {:ok, %AST.UnaryOp{op: :-, expr: val}, rest}
-    end
-  end
-
   defp parse_multiplicative(tokens) do
-    with {:ok, left, rest} <- parse_primary(tokens) do
+    with {:ok, left, rest} <- parse_unary(tokens) do
       parse_multiplicative_rest(left, rest)
     end
   end
@@ -220,6 +208,23 @@ defmodule Alchemoo.Parser.Expression do
 
   defp parse_multiplicative_rest(left, rest), do: {:ok, left, rest}
 
+  # Unary operators: !, -
+  defp parse_unary(["!" | rest]) do
+    case parse_primary(rest) do
+      {:ok, val, rest} -> {:ok, %AST.UnaryOp{op: :!, expr: val}, rest}
+      err -> err
+    end
+  end
+
+  defp parse_unary(["-" | rest]) do
+    case parse_primary(rest) do
+      {:ok, val, rest} -> {:ok, %AST.UnaryOp{op: :-, expr: val}, rest}
+      err -> err
+    end
+  end
+
+  defp parse_unary(tokens), do: parse_primary(tokens)
+
   # Primary expressions: literals, variables, parentheses, splice
   defp parse_primary(["@" | rest]) do
     # In LambdaMOO code, splices often apply to conditional expressions:
@@ -244,7 +249,18 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp parse_primary(["`" | rest]) do
-    handle_catch_expr(rest)
+    case parse_expr(rest) do
+      {:ok, expr, ["'" | rest]} ->
+        # Just backticks without codes: `expr'
+        parse_suffix(%AST.Catch{expr: expr, codes: nil, default: nil}, rest)
+
+      {:ok, %AST.Catch{} = catch_node, ["'" | rest]} ->
+        # With codes: `expr ! codes'
+        parse_suffix(catch_node, rest)
+
+      _ ->
+        {:error, :expected_closing_quote}
+    end
   end
 
   defp parse_primary([<<"\"", _::binary>> = token | rest]) do
@@ -296,47 +312,34 @@ defmodule Alchemoo.Parser.Expression do
 
   # --- Helper functions ---
 
-  defp handle_catch_expr(tokens) do
-    with {:ok, expr, rest} <- parse_expr(tokens) do
-      case rest do
-        ["!" | rest] ->
-          parse_catch_codes(expr, rest)
-
-        ["`" | rest] ->
-          parse_suffix(%AST.Catch{expr: expr, codes: nil, default: nil}, rest)
-
-        ["'" | rest] ->
-          parse_suffix(%AST.Catch{expr: expr, codes: nil, default: nil}, rest)
-
-        _ ->
-          {:error, :expected_bang_or_backtick}
-      end
-    end
+  defp parse_catch_suffix(node, ["ANY" | rest]) do
+    handle_catch_after_codes(node, :ANY, rest)
   end
 
-  defp parse_catch_codes(expr, tokens) do
-    # Can be 'ANY' or one/many codes separated by commas
-    case tokens do
-      ["ANY" | rest] ->
-        handle_catch_after_codes(expr, :ANY, rest)
-
-      _ ->
-        with {:ok, first_code, rest} <- parse_expr(tokens),
-             {:ok, codes, rest} <- parse_more_catch_codes([first_code], rest) do
-          handle_catch_after_codes(expr, codes, rest)
+  defp parse_catch_suffix(node, tokens) do
+    case parse_expr(tokens) do
+      {:ok, first_code, rest} ->
+        case parse_more_catch_codes([first_code], rest) do
+          {:ok, codes, rest} -> handle_catch_after_codes(node, codes, rest)
+          err -> err
         end
+
+      err ->
+        err
     end
   end
 
   defp parse_more_catch_codes([single], ["," | rest]) do
-    with {:ok, code, rest} <- parse_expr(rest) do
-      parse_more_catch_codes([code, single], rest)
+    case parse_expr(rest) do
+      {:ok, code, rest} -> parse_more_catch_codes([code, single], rest)
+      err -> err
     end
   end
 
   defp parse_more_catch_codes(rev_codes, ["," | rest]) do
-    with {:ok, code, rest} <- parse_expr(rest) do
-      parse_more_catch_codes([code | rev_codes], rest)
+    case parse_expr(rest) do
+      {:ok, code, rest} -> parse_more_catch_codes([code | rev_codes], rest)
+      err -> err
     end
   end
 
@@ -349,24 +352,15 @@ defmodule Alchemoo.Parser.Expression do
     case tokens do
       ["=>" | rest] ->
         case parse_expr(rest) do
-          {:ok, default, ["`" | rest]} ->
+          {:ok, default, rest} ->
             parse_suffix(%AST.Catch{expr: expr, codes: codes, default: default}, rest)
 
-          {:ok, default, ["'" | rest]} ->
-            parse_suffix(%AST.Catch{expr: expr, codes: codes, default: default}, rest)
-
-          _ ->
-            {:error, :expected_closing_backtick_or_quote}
+          err ->
+            err
         end
 
-      ["`" | rest] ->
-        parse_suffix(%AST.Catch{expr: expr, codes: codes, default: nil}, rest)
-
-      ["'" | rest] ->
-        parse_suffix(%AST.Catch{expr: expr, codes: codes, default: nil}, rest)
-
       _ ->
-        {:error, :expected_arrow_or_backtick}
+        parse_suffix(%AST.Catch{expr: expr, codes: codes, default: nil}, tokens)
     end
   end
 
@@ -420,7 +414,12 @@ defmodule Alchemoo.Parser.Expression do
     parse_suffix(%AST.PropRef{obj: system_obj, prop: name}, rest)
   end
 
-  # Suffixes: .prop, :verb(), [idx], [start..end]
+  # Suffixes: .prop, :verb(), [idx], [start..end], !(codes => default)
+  defp parse_suffix(node, ["!" | rest]) do
+    # Catch expression: node ! codes [=> default]
+    parse_catch_suffix(node, rest)
+  end
+
   defp parse_suffix(node, [".", "(" | rest]) do
     with {:ok, prop_expr, [")" | rest]} <- parse_expr(rest) do
       parse_suffix(%AST.PropRef{obj: node, prop: prop_expr}, rest)

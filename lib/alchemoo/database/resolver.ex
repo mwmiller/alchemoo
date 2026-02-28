@@ -5,6 +5,30 @@ defmodule Alchemoo.Database.Resolver do
   alias Alchemoo.Database.Flags
   alias Alchemoo.Database.Server, as: DB
 
+  alias Alchemoo.Database.Verb
+
+  @doc """
+  Find a verb on an object or its ancestors using a database snapshot.
+  """
+  def find_verb(db, obj_id, verb_name) do
+    case Map.get(db.objects, obj_id) do
+      nil -> {:error, :E_INVIND}
+      obj -> do_find_verb(db, obj, verb_name)
+    end
+  end
+
+  defp do_find_verb(db, obj, verb_name) do
+    case Enum.find(obj.verbs, &Verb.match?(&1, verb_name)) do
+      nil ->
+        if obj.parent >= 0,
+          do: find_verb(db, obj.parent, verb_name),
+          else: {:error, :E_VERBNF}
+
+      verb ->
+        {:ok, obj.id, verb}
+    end
+  end
+
   @doc """
   Find an object by name or alias in a list of candidate IDs.
   """

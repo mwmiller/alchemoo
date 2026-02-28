@@ -5,9 +5,7 @@ defmodule Alchemoo.TaskSupervisor do
   """
   use DynamicSupervisor
 
-  # CONFIG: Should be extracted to config
-  # CONFIG: :alchemoo, :max_total_tasks
-  @max_tasks 1000
+  defp max_tasks, do: Application.get_env(:alchemoo, :max_total_tasks, 1000)
 
   def start_link(init_arg) do
     DynamicSupervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
@@ -17,14 +15,14 @@ defmodule Alchemoo.TaskSupervisor do
   def init(_init_arg) do
     DynamicSupervisor.init(
       strategy: :one_for_one,
-      max_children: @max_tasks
+      max_children: max_tasks()
     )
   end
 
   @doc "Spawn a new task"
   def spawn_task(verb_code, env, opts \\ []) do
     # Check task limit
-    case count_tasks() >= @max_tasks do
+    case count_tasks() >= max_tasks() do
       true ->
         {:error, :too_many_tasks}
 

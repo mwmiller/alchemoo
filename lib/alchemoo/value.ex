@@ -87,16 +87,21 @@ defmodule Alchemoo.Value do
   Check if value is true (MOO semantics).
   The following values are false:
   - The integer 0
+  - The floating point 0.0 or -0.0
   - The empty string ""
   - The empty list {}
-  - Any error value
+  - ALL object references
+  - ALL error values
   All other values are true.
   """
   def truthy?(val) do
     case val do
       {:num, 0} -> false
+      {:float, +0.0} -> false
+      {:float, -0.0} -> false
       {:str, ""} -> false
       {:list, []} -> false
+      {:obj, _} -> true
       {:err, _} -> false
       _ -> true
     end
@@ -104,35 +109,45 @@ defmodule Alchemoo.Value do
 
   @doc """
   Compare two MOO values for equality.
+  MOO string equality is case-insensitive. List equality is recursive.
   """
+  def equal?({:str, s1}, {:str, s2}) do
+    String.downcase(s1) == String.downcase(s2)
+  end
+
+  def equal?({:list, l1}, {:list, l2}) do
+    Kernel.length(l1) == Kernel.length(l2) and
+      Enum.zip(l1, l2) |> Enum.all?(fn {v1, v2} -> equal?(v1, v2) end)
+  end
+
   def equal?({type, val1}, {type, val2}), do: val1 == val2
   def equal?(_, _), do: false
 
   @doc """
   Get length of a string or list.
   """
-  def length({:str, s}), do: {:num, String.length(s)}
-  def length({:list, items}), do: {:num, Kernel.length(items)}
-  def length(_), do: {:err, :E_TYPE}
+  def length({:str, s}), do: {:ok, {:num, String.length(s)}}
+  def length({:list, items}), do: {:ok, {:num, Kernel.length(items)}}
+  def length(_), do: {:error, :E_TYPE}
 
   @doc """
   Index into a string or list (1-based indexing like MOO).
   """
   def index({:str, s}, {:num, i}) when i > 0 do
     case String.at(s, i - 1) do
-      nil -> {:err, :E_RANGE}
-      char -> {:str, char}
+      nil -> {:error, :E_RANGE}
+      char -> {:ok, {:str, char}}
     end
   end
 
   def index({:list, items}, {:num, i}) when i > 0 do
     case Enum.at(items, i - 1) do
-      nil -> {:err, :E_RANGE}
-      val -> val
+      nil -> {:error, :E_RANGE}
+      val -> {:ok, val}
     end
   end
 
-  def index(_, _), do: {:err, :E_TYPE}
+  def index(_, _), do: {:error, :E_TYPE}
 
   @doc """
   Get range from string or list (1-based, inclusive).
@@ -144,15 +159,15 @@ defmodule Alchemoo.Value do
 
     case start_idx > len do
       true ->
-        {:str, ""}
+        {:ok, {:str, ""}}
 
       false ->
-        {:str, String.slice(s, start_idx - 1, end_idx - start_idx + 1)}
+        {:ok, {:str, String.slice(s, start_idx - 1, end_idx - start_idx + 1)}}
     end
   end
 
   def range({:str, _s}, start_idx, end_idx) when start_idx > 0 and end_idx < start_idx do
-    {:str, ""}
+    {:ok, {:str, ""}}
   end
 
   def range({:list, items}, start_idx, end_idx) when start_idx > 0 and end_idx >= start_idx do
@@ -162,18 +177,18 @@ defmodule Alchemoo.Value do
 
     case start_idx > len do
       true ->
-        {:list, []}
+        {:ok, {:list, []}}
 
       false ->
-        {:list, Enum.slice(items, start_idx - 1, end_idx - start_idx + 1)}
+        {:ok, {:list, Enum.slice(items, start_idx - 1, end_idx - start_idx + 1)}}
     end
   end
 
   def range({:list, _items}, start_idx, end_idx) when start_idx > 0 and end_idx < start_idx do
-    {:list, []}
+    {:ok, {:list, []}}
   end
 
-  def range(_, _, _), do: {:err, :E_TYPE}
+  def range(_, _, _), do: {:error, :E_TYPE}
 
   @doc """
   Replace range in string or list (1-based, inclusive).
@@ -198,7 +213,7 @@ defmodule Alchemoo.Value do
         }
       end
 
-    {:str, prefix <> replacement <> suffix}
+    {:ok, {:str, prefix <> replacement <> suffix}}
   end
 
   def set_range({:list, items}, start_idx, end_idx, {:list, replacement}) when start_idx > 0 do
@@ -221,12 +236,12 @@ defmodule Alchemoo.Value do
         }
       end
 
-    {:list, prefix ++ replacement ++ suffix}
+    {:ok, {:list, prefix ++ replacement ++ suffix}}
   end
 
-  def set_range({:str, _}, _start_idx, _end_idx, _), do: {:err, :E_TYPE}
-  def set_range({:list, _}, _start_idx, _end_idx, _), do: {:err, :E_TYPE}
-  def set_range(_, _, _, _), do: {:err, :E_TYPE}
+  def set_range({:str, _}, _start_idx, _end_idx, _), do: {:error, :E_TYPE}
+  def set_range({:list, _}, _start_idx, _end_idx, _), do: {:error, :E_TYPE}
+  def set_range(_, _, _, _), do: {:error, :E_TYPE}
 
   @doc """
   Concatenate two strings or lists.
@@ -240,8 +255,8 @@ defmodule Alchemoo.Value do
   """
   def set_index({:list, items}, {:num, i}, val) when i > 0 do
     case i <= Kernel.length(items) do
-      true -> {:list, List.replace_at(items, i - 1, val)}
-      false -> {:err, :E_RANGE}
+      true -> {:ok, {:list, List.replace_at(items, i - 1, val)}}
+      false -> {:error, :E_RANGE}
     end
   end
 
@@ -250,15 +265,15 @@ defmodule Alchemoo.Value do
       true ->
         prefix = String.slice(s, 0, i - 1)
         suffix = String.slice(s, i..-1//1)
-        {:str, prefix <> val <> suffix}
+        {:ok, {:str, prefix <> val <> suffix}}
 
       false ->
-        {:err, :E_RANGE}
+        {:error, :E_RANGE}
     end
   end
 
-  def set_index({:str, _}, {:num, _}, _), do: {:err, :E_TYPE}
-  def set_index(_, _, _), do: {:err, :E_TYPE}
+  def set_index({:str, _}, {:num, _}, _), do: {:error, :E_TYPE}
+  def set_index(_, _, _), do: {:error, :E_TYPE}
 
   @doc """
   Convert value to string representation.

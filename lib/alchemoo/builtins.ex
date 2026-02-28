@@ -18,11 +18,13 @@ defmodule Alchemoo.Builtins do
   Call a built-in function by name with arguments.
   """
   def call(name, args) when is_binary(name) do
-    call(String.to_atom(name), args, %{})
+    call(String.to_existing_atom(name), args, %{})
     |> case do
       {:ok, result, _env} -> result
       other -> other
     end
+  rescue
+    ArgumentError -> Value.err(:E_VERBNF)
   end
 
   def call(name, args) when is_atom(name) do
@@ -31,13 +33,18 @@ defmodule Alchemoo.Builtins do
       {:ok, result, _env} -> result
       other -> other
     end
+  catch
+    {:error, err, _env} -> err
+    {:error, err} -> err
   end
 
   @doc """
   Call a built-in function by name with arguments and environment.
   """
   def call(name, args, env) when is_binary(name) do
-    call(String.to_atom(name), args, env)
+    call(String.to_existing_atom(name), args, env)
+  rescue
+    ArgumentError -> throw({:error, Value.err(:E_VERBNF), env})
   end
 
   def call(name, args, env) when is_atom(name) do
@@ -57,7 +64,14 @@ defmodule Alchemoo.Builtins do
       end
     end
 
-    res
+    case res do
+      {:ok, {:err, _} = err, new_env} ->
+        # Standard MOO behavior: built-ins RAISE errors
+        throw({:error, err, new_env})
+
+      _ ->
+        res
+    end
   end
 
   # Implementation functions
@@ -249,14 +263,15 @@ defmodule Alchemoo.Builtins do
 
   def kill_task(_), do: Value.err(:E_ARGS)
 
-  # raise(error [, message [, value]]) - raise a MOO error
-  def raise_fn([{:err, error}]) do
+  def raise_fn([{:err, _} = error | _rest]) do
+    # In MOO, raise(code, message, value) raises 'code'.
+    # The message and value are diagnostic info for the exception handler.
     throw({:error, error})
   end
 
-  def raise_fn([{:err, _error}, {:str, message} | _]) do
-    # For now, just raise the error code - message/value support can be added to the Task module later
-    throw({:error, Value.str(message)})
+  def raise_fn([{:str, _} = error | _rest]) do
+    # MOO also allows raising strings as errors.
+    throw({:error, error})
   end
 
   def raise_fn(_), do: Value.err(:E_ARGS)
@@ -319,19 +334,40 @@ defmodule Alchemoo.Builtins do
   # eval(string) - evaluate MOO code synchronously
   def eval_fn([{:str, code}], env) do
     # Run the code in a new task but synchronously
-    # Inherit current context (this, player, caller)
-    # Convert context map to keyword list for Task.run
+    # Inherit current context (this, player, caller) from task_context
     context_map = Process.get(:task_context) || %{}
+    player_id = Map.get(context_map, :player, 2)
+
+    # Get player's location for 'here'
+    here_id =
+      case DBServer.get_object(player_id) do
+        {:ok, obj} -> obj.location
+        _ -> -1
+      end
+
+    # Inject 'me' and 'here' into the environment
+    eval_env =
+      env
+      |> Map.put("me", Value.obj(player_id))
+      |> Map.put("here", Value.obj(here_id))
+
     opts = Enum.into(context_map, [])
 
-    case Alchemoo.Task.run(code, %{}, opts) do
+    # Important: pass the updated env (containing :runtime, me, here)
+    case Alchemoo.Task.run(code, eval_env, opts) do
       {:ok, result} ->
         # MOO eval returns {success, value}
         {:ok, Value.list([Value.num(1), result]), env}
 
       {:error, reason} ->
         # MOO eval returns {0, error_message}
-        {:ok, Value.list([Value.num(0), Value.str(inspect(reason))]), env}
+        error_msg =
+          case reason do
+            {:err, err} -> to_string(err)
+            _ -> inspect(reason)
+          end
+
+        {:ok, Value.list([Value.num(0), Value.str(error_msg)]), env}
     end
   end
 
@@ -379,7 +415,10 @@ defmodule Alchemoo.Builtins do
 
   # length(str_or_list) - get length
   def length_fn([val]) do
-    Value.length(val)
+    case Value.length(val) do
+      {:ok, result} -> result
+      {:error, err} -> Value.err(err)
+    end
   end
 
   def length_fn(_), do: Value.err(:E_ARGS)
@@ -399,11 +438,16 @@ defmodule Alchemoo.Builtins do
     Value.list(items ++ [val])
   end
 
-  def listappend([{:list, items}, val, {:num, idx}]) when idx > 0 do
-    {before, after_list} = Enum.split(items, idx)
-    Value.list(before ++ [val] ++ after_list)
+  def listappend([{:list, items}, val, {:num, idx}]) when idx >= 0 do
+    if idx <= length(items) do
+      {before, after_list} = Enum.split(items, idx)
+      Value.list(before ++ [val] ++ after_list)
+    else
+      Value.err(:E_RANGE)
+    end
   end
 
+  def listappend([{:list, _}, _, _]), do: Value.err(:E_TYPE)
   def listappend(_), do: Value.err(:E_ARGS)
 
   # listinsert(list, value [, index]) - insert into list
@@ -411,25 +455,40 @@ defmodule Alchemoo.Builtins do
     Value.list([val | items])
   end
 
-  def listinsert([{:list, items}, val, {:num, idx}]) when idx > 0 do
-    {before, after_list} = Enum.split(items, idx - 1)
-    Value.list(before ++ [val] ++ after_list)
+  def listinsert([{:list, items}, val, {:num, idx}]) when idx >= 1 do
+    if idx <= length(items) + 1 do
+      {before, after_list} = Enum.split(items, idx - 1)
+      Value.list(before ++ [val] ++ after_list)
+    else
+      Value.err(:E_RANGE)
+    end
   end
 
+  def listinsert([{:list, _}, _, _]), do: Value.err(:E_TYPE)
   def listinsert(_), do: Value.err(:E_ARGS)
 
   # listdelete(list, index) - delete from list
-  def listdelete([{:list, items}, {:num, idx}]) when idx > 0 and idx <= length(items) do
-    Value.list(List.delete_at(items, idx - 1))
+  def listdelete([{:list, items}, {:num, idx}]) do
+    if idx > 0 and idx <= length(items) do
+      Value.list(List.delete_at(items, idx - 1))
+    else
+      Value.err(:E_RANGE)
+    end
   end
 
+  def listdelete([{:list, _}, _]), do: Value.err(:E_TYPE)
   def listdelete(_), do: Value.err(:E_ARGS)
 
   # listset(list, value, index) - set list element
-  def listset([{:list, items}, val, {:num, idx}]) when idx > 0 and idx <= length(items) do
-    Value.list(List.replace_at(items, idx - 1, val))
+  def listset([{:list, items}, val, {:num, idx}]) do
+    if idx > 0 and idx <= length(items) do
+      Value.list(List.replace_at(items, idx - 1, val))
+    else
+      Value.err(:E_RANGE)
+    end
   end
 
+  def listset([{:list, _}, _, _]), do: Value.err(:E_TYPE)
   def listset(_), do: Value.err(:E_ARGS)
 
   # equal(val1, val2) - test equality
@@ -799,6 +858,10 @@ defmodule Alchemoo.Builtins do
     index_fn([{:str, str}, {:str, substr}, Value.num(0)])
   end
 
+  def index_fn([{:str, _str}, {:str, ""}, _]) do
+    Value.num(1)
+  end
+
   def index_fn([{:str, str}, {:str, substr}, {:num, case_matters}]) do
     {search_str, search_substr} =
       case case_matters do
@@ -824,6 +887,10 @@ defmodule Alchemoo.Builtins do
   # rindex(str, substr [, case_matters]) - find substring from end
   def rindex_fn([{:str, str}, {:str, substr}]) do
     rindex_fn([{:str, str}, {:str, substr}, Value.num(0)])
+  end
+
+  def rindex_fn([{:str, str}, {:str, ""}, _]) do
+    Value.num(String.length(str) + 1)
   end
 
   def rindex_fn([{:str, str}, {:str, substr}, {:num, case_matters}]) do
@@ -854,16 +921,18 @@ defmodule Alchemoo.Builtins do
     strsub([{:str, str}, {:str, old}, {:str, new}, Value.num(0)])
   end
 
+  def strsub([{:str, str}, {:str, ""}, _, _]), do: Value.str(str)
+
   def strsub([{:str, str}, {:str, old}, {:str, new}, {:num, case_matters}]) do
     result =
       case case_matters do
         0 ->
           # Case-insensitive replace
           regex = Regex.compile!(Regex.escape(old), "i")
-          Regex.replace(regex, str, new, global: false)
+          Regex.replace(regex, str, new)
 
         _ ->
-          String.replace(str, old, new, global: false)
+          String.replace(str, old, new)
       end
 
     Value.str(result)
@@ -883,6 +952,11 @@ defmodule Alchemoo.Builtins do
   def strcmp(_), do: Value.err(:E_ARGS)
 
   # explode(str [, delim]) - split string
+  def explode([{:str, str}, {:str, ""}]) do
+    parts = String.graphemes(str)
+    Value.list(Enum.map(parts, &Value.str/1))
+  end
+
   def explode([{:str, str}]) do
     explode([{:str, str}, Value.str(" ")])
   end
@@ -1949,15 +2023,22 @@ defmodule Alchemoo.Builtins do
   def object_matches_name?(id, name, env) do
     case get_object_for_match(id, env) do
       {:ok, obj} ->
-        # Check name
-        if String.downcase(obj.name) == name do
-          true
-        else
-          # Check aliases property if it exists
-          check_aliases(obj, name, env)
-        end
+        check_object_match(obj, name, env)
 
       _ ->
+        false
+    end
+  end
+
+  defp check_object_match(obj, name, env) do
+    cond do
+      String.downcase(obj.name) == name ->
+        true
+
+      res = check_aliases(obj, name, env) ->
+        res
+
+      true ->
         false
     end
   end

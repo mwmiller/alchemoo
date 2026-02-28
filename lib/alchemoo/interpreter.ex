@@ -11,25 +11,32 @@ defmodule Alchemoo.Interpreter do
   Evaluate a MOO expression AST with given environment.
   """
   def eval(ast, env \\ %{}) do
+    if trace_interpreter_statements?(), do: Logger.debug("Eval: #{inspect(ast)}")
     consume_tick()
-    # Logger.debug("Eval: #{inspect(ast)}")
 
     case do_eval(ast, env) do
       {:ok, val, new_env} ->
-        # Logger.debug("Eval Result: #{Value.to_literal(val)}")
         {:ok, val, new_env}
 
       {:ok, val} ->
-        # Logger.debug("Eval Result: #{Value.to_literal(val)}")
         {:ok, val, env}
 
-      {:error, {:err, _} = err} ->
-        Logger.debug("MOO Error: #{inspect(err)} in #{inspect(ast)}")
-        maybe_log_interpreter_context(ast, err, env)
-        {:error, err}
+      {:error, err, new_env} ->
+        if trace_interpreter_eval?(),
+          do: Logger.debug("MOO Error: #{inspect(err)} in #{inspect(ast)}")
 
-      {:error, _} = err ->
-        err
+        maybe_log_interpreter_context(ast, err, new_env)
+        {:error, err, new_env}
+
+      {:error, {:err, _} = err} ->
+        if trace_interpreter_eval?(),
+          do: Logger.debug("MOO Error: #{inspect(err)} in #{inspect(ast)}")
+
+        maybe_log_interpreter_context(ast, err, env)
+        {:error, err, env}
+
+      {:error, err} ->
+        {:error, err, env}
     end
   rescue
     e ->
@@ -37,7 +44,13 @@ defmodule Alchemoo.Interpreter do
         "Interpreter Crash: #{inspect(e)}\n#{Exception.format_stacktrace(__STACKTRACE__)}"
       )
 
-      {:error, {:interpreter_error, e, __STACKTRACE__}}
+      {:error, {:interpreter_error, e, __STACKTRACE__}, env}
+  catch
+    {:error, err, new_env} ->
+      {:error, err, new_env}
+
+    {:error, err} ->
+      {:error, err, env}
   end
 
   defp consume_tick do
@@ -54,8 +67,8 @@ defmodule Alchemoo.Interpreter do
 
   defp do_eval(%AST.Var{name: name}, env) do
     case Map.get(env, name) do
-      nil -> {:error, Value.err(:E_VARNF)}
-      val -> {:ok, val}
+      nil -> {:error, Value.err(:E_VARNF), env}
+      val -> {:ok, val, env}
     end
   end
 
@@ -68,11 +81,15 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp do_eval(%AST.UnaryOp{op: op, expr: expr}, env) do
-    with {:ok, val, new_env} <- eval(expr, env) do
-      case eval_unop(op, val) do
-        {:ok, result} -> {:ok, result, new_env}
-        {:error, _} = err -> err
-      end
+    case eval(expr, env) do
+      {:ok, val, new_env} ->
+        case eval_unop(op, val) do
+          {:ok, result} -> {:ok, result, new_env}
+          {:error, err} -> {:error, err, new_env}
+        end
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
@@ -86,7 +103,7 @@ defmodule Alchemoo.Interpreter do
           {:ok, val, next_env} ->
             {:cont, {:ok, [val | acc], next_env}}
 
-          {:error, _} = err ->
+          {:error, _, _} = err ->
             {:halt, err}
         end
       end)
@@ -98,41 +115,61 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp do_eval(%AST.Index{expr: expr, index: index}, env) do
-    with {:ok, coll, env1} <- eval(expr, env) do
-      with_dollar(env1, coll, &eval_index_with_dollar(index, coll, &1))
+    case eval(expr, env) do
+      {:ok, coll, env1} ->
+        with_dollar(env1, coll, &eval_index_with_dollar(index, coll, &1))
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
   defp do_eval(%AST.Range{expr: expr, start: start_expr, end: end_expr}, env) do
-    with {:ok, coll, env1} <- eval(expr, env) do
-      with_dollar(env1, coll, &eval_range_with_dollar(start_expr, end_expr, coll, &1))
+    case eval(expr, env) do
+      {:ok, coll, env1} ->
+        with_dollar(env1, coll, &eval_range_with_dollar(start_expr, end_expr, coll, &1))
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
   defp do_eval(%AST.Conditional{condition: cond, then_expr: then_e, else_expr: else_e}, env) do
-    with {:ok, cond_val, env1} <- eval(cond, env) do
-      case Value.truthy?(cond_val) do
-        true -> eval(then_e, env1)
-        false -> eval(else_e, env1)
-      end
+    case eval(cond, env) do
+      {:ok, cond_val, env1} ->
+        case Value.truthy?(cond_val) do
+          true -> eval(then_e, env1)
+          false -> eval(else_e, env1)
+        end
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
   defp do_eval(%AST.FuncCall{name: name, args: arg_exprs}, env) do
-    # Logger.debug("Interpreter: calling builtin #{name}()")
+    if trace_interpreter_statements?(), do: Logger.debug("Interpreter: calling builtin #{name}()")
 
-    with {:ok, arg_vals, env1} <- eval_args(arg_exprs, env) do
-      Alchemoo.Builtins.call(name, arg_vals, env1)
+    case eval_args(arg_exprs, env) do
+      {:ok, arg_vals, env1} ->
+        Alchemoo.Builtins.call(name, arg_vals, env1)
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
   defp do_eval(%AST.PropRef{obj: obj_expr, prop: prop_expr}, env) do
     with {:ok, obj_val, env1} <- eval(obj_expr, env),
-         {:ok, prop_name, env2} <- resolve_dynamic_name(prop_expr, env1) do
-      case Map.get(env2, :runtime) do
-        nil -> {:error, Value.err(:E_PERM)}
-        runtime -> Alchemoo.Runtime.get_property(runtime, obj_val, prop_name)
+         {:ok, prop_name, env2} <- resolve_dynamic_name(prop_expr, env1),
+         {:ok, runtime} <- get_runtime(env2) do
+      case Alchemoo.Runtime.get_property(runtime, obj_val, prop_name) do
+        {:ok, val} -> {:ok, val, env2}
+        {:error, err} -> {:error, err, env2}
       end
+    else
+      {:error, :no_runtime} -> {:error, {:err, :E_PERM}, env}
+      {:error, err, env_err} -> {:error, err, env_err}
     end
   end
 
@@ -185,18 +222,25 @@ defmodule Alchemoo.Interpreter do
          {:ok, end_idx} <- require_num(end_val) do
       items = if start_idx <= end_idx, do: Enum.map(start_idx..end_idx, &Value.num/1), else: []
       eval_for_list(var, items, body, env2)
+    else
+      {:error, {:err, :E_TYPE}} -> {:error, {:err, :E_TYPE}, env}
+      {:error, err, env_err} -> {:error, err, env_err}
     end
   end
 
   defp do_eval(%AST.For{var: var, range: range_expr, body: body}, env) do
-    with {:ok, range, env1} <- eval(range_expr, env) do
-      items =
-        case range do
-          {:list, items} -> items
-          _ -> []
-        end
+    case eval(range_expr, env) do
+      {:ok, range, env1} ->
+        items =
+          case range do
+            {:list, items} -> items
+            _ -> []
+          end
 
-      eval_for_list(var, items, body, env1)
+        eval_for_list(var, items, body, env1)
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
@@ -210,20 +254,37 @@ defmodule Alchemoo.Interpreter do
   defp do_eval(%AST.Continue{}, _env), do: throw(:continue)
 
   defp do_eval(%AST.Assignment{target: target, value: val_expr}, env) do
-    with {:ok, val, env1} <- eval(val_expr, env) do
-      perform_assignment(target, val, env1)
+    case eval(val_expr, env) do
+      {:ok, val, env1} -> perform_assignment(target, val, env1)
+      {:error, _, _} = err -> err
     end
   end
 
-  defp do_eval(%AST.Try{body: body, except_clauses: clauses}, env) do
+  defp do_eval(%AST.Try{body: body, except_clauses: clauses, finally_block: finally}, env) do
     case eval(body, env) do
-      {:error, err} -> handle_exception(err, clauses, env)
-      other -> other
+      {:ok, val, next_env} ->
+        run_finally_and_return(finally, val, next_env)
+
+      {:error, err, next_env} ->
+        handle_try_error(err, clauses, finally, next_env)
+
+      {:error, err} ->
+        handle_try_error(err, clauses, finally, env)
     end
   rescue
-    e -> {:error, e}
+    e ->
+      if finally, do: eval(finally, env)
+      {:error, e, env}
   catch
-    {:error, err} -> handle_exception(err, clauses, env)
+    {:return, val} ->
+      if finally, do: eval(finally, env)
+      throw({:return, val})
+
+    {:error, err, next_env} ->
+      handle_try_error(err, clauses, finally, next_env)
+
+    {:error, err} ->
+      handle_try_error(err, clauses, finally, env)
   end
 
   defp do_eval(%AST.Catch{expr: expr, codes: codes, default: default}, env) do
@@ -231,14 +292,70 @@ defmodule Alchemoo.Interpreter do
       {:ok, result, new_env} ->
         {:ok, result, new_env}
 
+      {:error, err, new_env} ->
+        handle_catch_error(err, codes, default, new_env)
+
       {:error, err} ->
         handle_catch_error(err, codes, default, env)
     end
+  catch
+    {:error, err, new_env} ->
+      handle_catch_error(err, codes, default, new_env)
+
+    {:error, err} ->
+      handle_catch_error(err, codes, default, env)
   end
 
   defp do_eval(%AST.ExprStmt{expr: expr}, env), do: eval(expr, env)
 
   # --- Helper functions ---
+
+  defp handle_try_error(err, clauses, finally, env) do
+    case handle_exception(err, clauses, env) do
+      {:catch_matched, result, next_env} ->
+        run_finally_and_return(finally, result, next_env)
+
+      {:error, _, _} = inner_err ->
+        run_finally_and_propagate_error(finally, inner_err, env)
+
+      :no_match ->
+        run_finally_and_throw(finally, err, env)
+    end
+  end
+
+  defp run_finally_and_return(nil, result, env), do: {:ok, result, env}
+
+  defp run_finally_and_return(finally, result, env) do
+    case eval(finally, env) do
+      {:ok, _, final_env} -> {:ok, result, final_env}
+      {:error, _, _} = err -> err
+    end
+  end
+
+  defp run_finally_and_propagate_error(nil, inner_err, _env), do: inner_err
+
+  defp run_finally_and_propagate_error(finally, inner_err, env) do
+    case eval(finally, env) do
+      {:ok, _, final_env} -> put_elem(inner_err, 2, final_env)
+      {:error, _, _} = finally_err -> finally_err
+    end
+  end
+
+  defp run_finally_and_throw(nil, err, env), do: throw({:error, err, env})
+
+  defp run_finally_and_throw(finally, err, env) do
+    case eval(finally, env) do
+      {:ok, _, final_env} -> throw({:error, err, final_env})
+      {:error, _, _} = finally_err -> finally_err
+    end
+  end
+
+  defp get_runtime(env) do
+    case Map.get(env, :runtime) do
+      nil -> {:error, :no_runtime}
+      runtime -> {:ok, runtime}
+    end
+  end
 
   defp resolve_dynamic_name(name, env) when is_binary(name), do: {:ok, name, env}
 
@@ -251,21 +368,24 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp with_dollar(env, coll, fun) do
-    dollar_val =
-      case Value.length(coll) do
-        {:num, _} = len -> len
-        {:err, _} = err -> err
-      end
+    case Value.length(coll) do
+      {:ok, dollar_val} ->
+        prior = Map.get(env, "$", :__missing__)
+        env_with_dollar = Map.put(env, "$", dollar_val)
 
-    prior = Map.get(env, "$", :__missing__)
-    env_with_dollar = Map.put(env, "$", dollar_val)
+        case fun.(env_with_dollar) do
+          {:ok, val, env_after} ->
+            {:ok, val, restore_dollar(env_after, prior)}
 
-    case fun.(env_with_dollar) do
-      {:ok, val, env_after} ->
-        {:ok, val, restore_dollar(env_after, prior)}
+          {:error, err, env_after} ->
+            {:error, err, restore_dollar(env_after, prior)}
 
-      {:error, _} = err ->
-        err
+          {:error, err} ->
+            {:error, err, env}
+        end
+
+      {:error, err} ->
+        {:error, err, env}
     end
   end
 
@@ -273,11 +393,15 @@ defmodule Alchemoo.Interpreter do
   defp restore_dollar(env, prior), do: Map.put(env, "$", prior)
 
   defp eval_index_with_dollar(index_expr, coll, env_with_dollar) do
-    with {:ok, idx, env2} <- eval(index_expr, env_with_dollar) do
-      case Value.index(coll, idx) do
-        {:err, _} = err -> {:error, err}
-        val -> {:ok, val, env2}
-      end
+    case eval(index_expr, env_with_dollar) do
+      {:ok, idx, env2} ->
+        case Value.index(coll, idx) do
+          {:ok, val} -> {:ok, val, env2}
+          {:error, err} -> {:error, err, env2}
+        end
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
@@ -287,34 +411,45 @@ defmodule Alchemoo.Interpreter do
          {:ok, start_idx} <- require_num(start_val),
          {:ok, end_idx} <- require_num(end_val) do
       case Value.range(coll, start_idx, end_idx) do
-        {:err, _} = err ->
+        {:ok, val} ->
+          {:ok, val, env3}
+
+        {:error, err} ->
           maybe_log_interpreter_debug(
             "range failed coll=#{inspect(coll)} start=#{inspect(start_val)} end=#{inspect(end_val)}"
           )
 
-          {:error, err}
-
-        val ->
-          {:ok, val, env3}
+          {:error, err, env3}
       end
+    else
+      {:error, {:err, :E_TYPE}} -> {:error, {:err, :E_TYPE}, env_with_dollar}
+      {:error, err, env_err} -> {:error, err, env_err}
     end
   end
 
   defp eval_logical_and(left, right, env) do
-    with {:ok, left_val, env1} <- eval(left, env) do
-      case Value.truthy?(left_val) do
-        true -> eval(right, env1)
-        false -> {:ok, left_val, env1}
-      end
+    case eval(left, env) do
+      {:ok, left_val, env1} ->
+        case Value.truthy?(left_val) do
+          true -> eval(right, env1)
+          false -> {:ok, left_val, env1}
+        end
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
   defp eval_logical_or(left, right, env) do
-    with {:ok, left_val, env1} <- eval(left, env) do
-      case Value.truthy?(left_val) do
-        true -> {:ok, left_val, env1}
-        false -> eval(right, env1)
-      end
+    case eval(left, env) do
+      {:ok, left_val, env1} ->
+        case Value.truthy?(left_val) do
+          true -> {:ok, left_val, env1}
+          false -> eval(right, env1)
+        end
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
@@ -323,17 +458,21 @@ defmodule Alchemoo.Interpreter do
          {:ok, right_val, env2} <- eval(right, env1) do
       case eval_binop(op, left_val, right_val) do
         {:ok, val} -> {:ok, val, env2}
-        {:error, _} = err -> err
+        {:error, err} -> {:error, err, env2}
       end
     end
   end
 
   defp execute_verb_call(obj_val, verb_name, arg_vals, env) do
-    # Logger.debug("Interpreter: calling verb #{Value.to_literal(obj_val)}:#{verb_name}()")
+    if trace_interpreter_statements?() do
+      Logger.debug(
+        "Interpreter: calling verb #{Value.to_literal(obj_val)}:#{verb_name}(#{inspect(arg_vals)})"
+      )
+    end
 
     case Map.get(env, :runtime) do
       nil ->
-        {:error, Value.err(:E_PERM)}
+        {:error, Value.err(:E_PERM), env}
 
       runtime ->
         dispatch_verb_call(runtime, obj_val, verb_name, arg_vals, env)
@@ -346,7 +485,7 @@ defmodule Alchemoo.Interpreter do
         {:ok, result, Map.put(env, :runtime, new_runtime)}
 
       {:error, err} ->
-        {:error, err}
+        {:error, err, env}
     end
   end
 
@@ -366,8 +505,8 @@ defmodule Alchemoo.Interpreter do
     with {:ok, coll, env1} <- eval(target_expr, env),
          {:ok, idx, env2} <- eval(index_expr, env1) do
       case Value.set_index(coll, idx, val) do
-        {:err, _} = err -> {:error, err}
-        new_coll -> perform_assignment(target_expr, new_coll, env2)
+        {:ok, new_coll} -> perform_assignment(target_expr, new_coll, env2)
+        {:error, err} -> {:error, err, env2}
       end
     end
   end
@@ -377,21 +516,26 @@ defmodule Alchemoo.Interpreter do
          val,
          env
        ) do
-    with {:ok, coll, env1} <- eval(target_expr, env) do
-      with_dollar(env1, coll, fn env_with_dollar ->
-        assign_range_target(target_expr, start_expr, end_expr, coll, val, env_with_dollar)
-      end)
+    case eval(target_expr, env) do
+      {:ok, coll, env1} ->
+        with_dollar(env1, coll, fn env_with_dollar ->
+          assign_range_target(target_expr, start_expr, end_expr, coll, val, env_with_dollar)
+        end)
+
+      {:error, err, env1} ->
+        {:error, err, env1}
     end
   end
 
   defp perform_assignment(%AST.ListExpr{elements: targets}, {:list, values}, env) do
     case destructure_list(targets, values, env) do
       {:ok, new_env} -> {:ok, {:list, values}, new_env}
-      err -> err
+      {:error, err, new_env} -> {:error, err, new_env}
+      {:error, err} -> {:error, err, env}
     end
   end
 
-  defp perform_assignment(%AST.ListExpr{}, _, _env), do: {:error, Value.err(:E_TYPE)}
+  defp perform_assignment(%AST.ListExpr{}, _, env), do: {:error, Value.err(:E_TYPE), env}
 
   defp assign_range_target(target_expr, start_expr, end_expr, coll, val, env) do
     with {:ok, start_val, env2} <- eval(start_expr, env),
@@ -399,22 +543,26 @@ defmodule Alchemoo.Interpreter do
          {:ok, start_idx} <- require_num(start_val),
          {:ok, end_idx} <- require_num(end_val) do
       case Value.set_range(coll, start_idx, end_idx, val) do
-        {:err, _} = err -> {:error, err}
-        new_coll -> perform_assignment(target_expr, new_coll, env3)
+        {:ok, new_coll} -> perform_assignment(target_expr, new_coll, env3)
+        {:error, err} -> {:error, err, env3}
       end
+    else
+      {:error, {:err, :E_TYPE}} -> {:error, {:err, :E_TYPE}, env}
+      {:error, err, env_err} -> {:error, err, env_err}
     end
   end
 
   defp destructure_list([], [], env), do: {:ok, env}
-  defp destructure_list([], _, _env), do: {:error, Value.err(:E_ARGS)}
+  defp destructure_list([], _, env), do: {:error, Value.err(:E_ARGS), env}
 
   defp destructure_list([%AST.UnaryOp{op: :@, expr: target} | rest_targets], values, env) do
     # Collect all remaining values into this target
     num_rest = length(rest_targets)
     {spliced_values, remaining_values} = Enum.split(values, length(values) - num_rest)
 
-    with {:ok, _, env} <- perform_assignment(target, Value.list(spliced_values), env) do
-      destructure_list(rest_targets, remaining_values, env)
+    case perform_assignment(target, Value.list(spliced_values), env) do
+      {:ok, _, next_env} -> destructure_list(rest_targets, remaining_values, next_env)
+      {:error, _, _} = err -> err
     end
   end
 
@@ -426,8 +574,9 @@ defmodule Alchemoo.Interpreter do
     case values do
       [val | rest_values] ->
         # Have value, use it
-        with {:ok, _, env} <- perform_assignment(%AST.Var{name: name}, val, env) do
-          destructure_list(rest_targets, rest_values, env)
+        case perform_assignment(%AST.Var{name: name}, val, env) do
+          {:ok, _, next_env} -> destructure_list(rest_targets, rest_values, next_env)
+          {:error, _, _} = err -> err
         end
 
       [] ->
@@ -438,39 +587,91 @@ defmodule Alchemoo.Interpreter do
   end
 
   defp destructure_list([target | rest_targets], [val | rest_values], env) do
-    with {:ok, _, env} <- perform_assignment(target, val, env) do
-      destructure_list(rest_targets, rest_values, env)
+    case perform_assignment(target, val, env) do
+      {:ok, _, next_env} -> destructure_list(rest_targets, rest_values, next_env)
+      {:error, _, _} = err -> err
     end
   end
 
-  defp destructure_list([_ | _], [], _env), do: {:error, Value.err(:E_ARGS)}
+  defp destructure_list([_ | _], [], env), do: {:error, Value.err(:E_ARGS), env}
 
   defp handle_exception(err, clauses, env) do
-    case clauses do
-      [clause | _] ->
-        # Standard MOO error format for except: {code, message, value, traceback}
-        # For now, just {code, "", 0, {}}
-        err_value = Value.list([err, Value.str(""), Value.num(0), Value.list([])])
-        except_env = Map.put(env, clause.error_var, err_value)
-        eval(clause.body, except_env)
-
-      [] ->
-        throw({:error, err})
+    case Enum.find(clauses, &should_catch_exception?(err, &1, env)) do
+      nil -> :no_match
+      clause -> execute_exception_handler(clause, err, env)
     end
+  end
+
+  defp execute_exception_handler(clause, err, env) do
+    err_value = build_error_value(err)
+    except_env = bind_error_var(env, clause.error_var, err_value)
+
+    case eval(clause.body, except_env) do
+      {:ok, val, next_env} -> {:catch_matched, val, next_env}
+      {:error, _, _} = err -> err
+    end
+  end
+
+  defp build_error_value(err) do
+    err_code =
+      case err do
+        {:err, code} -> code
+        _ -> :E_NONE
+      end
+
+    Value.list([err, Value.str(to_string(err_code)), Value.num(0), Value.list([])])
+  end
+
+  defp bind_error_var(env, var, err_value) do
+    case var do
+      nil -> env
+      "" -> env
+      name -> Map.put(env, name, err_value)
+    end
+  end
+
+  defp should_catch_exception?(err, clause, env) do
+    # Defensive check for struct fields
+    codes_expr = Map.get(clause, :codes)
+
+    case codes_expr do
+      nil ->
+        true
+
+      :ANY ->
+        true
+
+      expr ->
+        case eval(expr, env) do
+          {:ok, :ANY, _} ->
+            true
+
+          {:ok, {:list, items}, _} ->
+            Enum.any?(items, &Value.equal?(&1, err))
+
+          {:ok, item, _} ->
+            Value.equal?(item, err)
+
+          _ ->
+            false
+        end
+    end
+  rescue
+    _ -> false
   end
 
   defp perform_prop_assignment(obj_val, prop_name, val, env) do
     case Map.get(env, :runtime) do
       nil ->
-        {:error, Value.err(:E_PERM)}
+        {:error, Value.err(:E_PERM), env}
 
       runtime ->
         case Alchemoo.Runtime.set_property(runtime, obj_val, prop_name, val) do
           {:ok, val, new_runtime} ->
             {:ok, val, Map.put(env, :runtime, new_runtime)}
 
-          {:error, _} = err ->
-            err
+          {:error, err} ->
+            {:error, err, env}
         end
     end
   end
@@ -486,8 +687,8 @@ defmodule Alchemoo.Interpreter do
           _ -> eval_block(rest, new_env)
         end
 
-      {:error, _} = err ->
-        err
+      {:error, err, new_env} ->
+        {:error, err, new_env}
     end
   end
 
@@ -496,11 +697,15 @@ defmodule Alchemoo.Interpreter do
   defp eval_elseifs([], else_block, env), do: eval(else_block, env)
 
   defp eval_elseifs([%AST.ElseIf{condition: cond, block: block} | rest], else_block, env) do
-    with {:ok, cond_val, env1} <- eval(cond, env) do
-      case Value.truthy?(cond_val) do
-        true -> eval(block, env1)
-        false -> eval_elseifs(rest, else_block, env1)
-      end
+    case eval(cond, env) do
+      {:ok, cond_val, env1} ->
+        case Value.truthy?(cond_val) do
+          true -> eval(block, env1)
+          false -> eval_elseifs(rest, else_block, env1)
+        end
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
@@ -509,7 +714,7 @@ defmodule Alchemoo.Interpreter do
       {:ok, cond_val, env1} ->
         handle_while_loop(cond_val, cond, body, env1)
 
-      {:error, _} = err ->
+      {:error, _, _} = err ->
         err
     end
   end
@@ -526,7 +731,7 @@ defmodule Alchemoo.Interpreter do
       {:break, env1} -> {:ok, Value.num(0), env1 || env}
       {:continue, env1} -> eval_while(cond, body, env1 || env)
       {:ok, _val, env1} -> eval_while(cond, body, env1)
-      {:error, _} = err -> err
+      {:error, err, env1} -> {:error, err, env1}
     end
   end
 
@@ -540,7 +745,7 @@ defmodule Alchemoo.Interpreter do
       {:break, env1} -> {:ok, Value.num(0), env1 || env}
       {:continue, env1} -> eval_for_list(var, rest, body, env1 || env)
       {:ok, _val, env1} -> eval_for_list(var, rest, body, env1)
-      {:error, _} = err -> err
+      {:error, err, env1} -> {:error, err, env1}
     end
   end
 
@@ -559,14 +764,14 @@ defmodule Alchemoo.Interpreter do
         {:ok, {:spliced, {:list, list}}, next_env} ->
           {:cont, {:ok, Enum.reverse(list) ++ acc, next_env}}
 
-        {:ok, {:spliced, _}, _} ->
-          {:halt, {:error, Value.err(:E_TYPE)}}
+        {:ok, {:spliced, _}, next_env} ->
+          {:halt, {:error, Value.err(:E_TYPE), next_env}}
 
         {:ok, val, next_env} ->
           {:cont, {:ok, [val | acc], next_env}}
 
-        {:error, _} = err ->
-          {:halt, err}
+        {:error, err, next_env} ->
+          {:halt, {:error, err, next_env}}
       end
     end)
     |> case do
@@ -580,6 +785,9 @@ defmodule Alchemoo.Interpreter do
 
   defp should_catch?(err, codes_expr, env) do
     case eval(codes_expr, env) do
+      {:ok, :ANY, _} ->
+        true
+
       {:ok, {:list, items}, _} ->
         Enum.any?(items, &Value.equal?(&1, err))
 
@@ -595,7 +803,7 @@ defmodule Alchemoo.Interpreter do
     if should_catch?(err, codes, env) do
       catch_default_result(default, err, env)
     else
-      {:error, err}
+      {:error, err, env}
     end
   end
 
@@ -605,9 +813,15 @@ defmodule Alchemoo.Interpreter do
   defp assign_optional_default(name, default, rest_targets, env) do
     default_val_expr = default || %AST.Literal{value: {:num, 0}}
 
-    with {:ok, val, env} <- eval(default_val_expr, env),
-         {:ok, _, env} <- perform_assignment(%AST.Var{name: name}, val, env) do
-      destructure_list(rest_targets, [], env)
+    case eval(default_val_expr, env) do
+      {:ok, val, env1} ->
+        case perform_assignment(%AST.Var{name: name}, val, env1) do
+          {:ok, _, env2} -> destructure_list(rest_targets, [], env2)
+          {:error, _, _} = err -> err
+        end
+
+      {:error, _, _} = err ->
+        err
     end
   end
 
@@ -643,6 +857,9 @@ defmodule Alchemoo.Interpreter do
 
   defp trace_interpreter_eval?, do: Application.get_env(:alchemoo, :trace_interpreter_eval, false)
 
+  defp trace_interpreter_statements?,
+    do: Application.get_env(:alchemoo, :trace_interpreter_statements, false)
+
   defp eval_binop(:+, {:num, a}, {:num, b}), do: {:ok, Value.num(a + b)}
   defp eval_binop(:+, {:str, a}, {:str, b}), do: {:ok, Value.str(a <> b)}
   defp eval_binop(:+, {:str, a}, b), do: {:ok, Value.str(a <> Value.to_literal(b))}
@@ -665,9 +882,9 @@ defmodule Alchemoo.Interpreter do
   defp eval_binop(:^, {:float, a}, {:float, b}), do: {:ok, {:float, :math.pow(a, b)}}
 
   defp eval_binop(:in, val, {:list, items}) do
-    case Enum.any?(items, &Value.equal?(&1, val)) do
-      true -> {:ok, Value.num(1)}
-      false -> {:ok, Value.num(0)}
+    case Enum.find_index(items, &Value.equal?(&1, val)) do
+      nil -> {:ok, Value.num(0)}
+      idx -> {:ok, Value.num(idx + 1)}
     end
   end
 

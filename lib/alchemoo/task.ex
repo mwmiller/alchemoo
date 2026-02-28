@@ -9,11 +9,8 @@ defmodule Alchemoo.Task do
 
   alias Alchemoo.{Interpreter, Parser, Value}
 
-  # CONFIG: Should be extracted to config
-  # CONFIG: :alchemoo, :default_tick_quota
-  @default_tick_quota 10_000
-  # CONFIG: :alchemoo, :max_tasks_per_player
-  @max_tasks_per_player 10
+  defp default_tick_quota, do: Application.get_env(:alchemoo, :default_tick_quota, 10_000)
+  defp max_tasks_per_player, do: Application.get_env(:alchemoo, :max_tasks_per_player, 10)
 
   defstruct [
     :id,
@@ -23,6 +20,8 @@ defmodule Alchemoo.Task do
     :this,
     :caller,
     :args,
+    # Added for better logging
+    :verb_name,
     # Connection handler for this task
     :handler_pid,
     # Process to send result to for sync execution
@@ -30,7 +29,7 @@ defmodule Alchemoo.Task do
     # Current task permissions (object ID)
     :perms,
     ticks_used: 0,
-    tick_quota: @default_tick_quota,
+    tick_quota: 0,
     suspended_until: nil,
     result: nil,
     started_at: nil
@@ -56,7 +55,7 @@ defmodule Alchemoo.Task do
     # Check player task limit
     player_id = Keyword.get(opts, :player)
 
-    case player_id && count_player_tasks(player_id) >= @max_tasks_per_player do
+    case player_id && count_player_tasks(player_id) >= max_tasks_per_player() do
       true ->
         {:error, :too_many_tasks}
 
@@ -171,15 +170,16 @@ defmodule Alchemoo.Task do
       this: this_id,
       caller: caller_id,
       args: args,
+      verb_name: verb_name,
       handler_pid: Keyword.get(opts, :handler_pid),
       sync_caller: Keyword.get(opts, :sync_caller),
-      tick_quota: Keyword.get(opts, :tick_quota, @default_tick_quota),
+      tick_quota: Keyword.get(opts, :tick_quota, default_tick_quota()),
       perms: Keyword.get(opts, :perms, player_id),
       started_at: System.monotonic_time(:second)
     }
 
     maybe_log_task_debug(
-      "Initializing task #{inspect(task.id)} for verb '#{verb_name}' on ##{this_id}"
+      "Initializing task #{inspect(task.id)} for verb '#{verb_name}' on ##{this_id} (quota: #{task.tick_quota})"
     )
 
     # Registry allows metadata-based lookups (e.g. all tasks for a player)
@@ -231,8 +231,20 @@ defmodule Alchemoo.Task do
         handle_task_quota_exceeded(new_task)
 
       {:error, reason, new_task} ->
-        Logger.error("Task #{inspect(task.id)} failed: #{inspect(reason)}")
+        maybe_log_task_error(task.id, reason)
         handle_task_error(reason, new_task)
+    end
+  end
+
+  defp maybe_log_task_error(task_id, reason) do
+    case reason do
+      {:err, _} ->
+        # Standard MOO error, only log if tracing
+        maybe_log_task_debug("Task #{inspect(task_id)} failed with MOO error: #{inspect(reason)}")
+
+      _ ->
+        # Unexpected crash or system error
+        Logger.error("Task #{inspect(task_id)} crashed: #{inspect(reason)}")
     end
   end
 
@@ -246,7 +258,9 @@ defmodule Alchemoo.Task do
   end
 
   defp handle_task_quota_exceeded(task) do
-    Logger.warning("Task #{inspect(task.id)} exceeded tick quota")
+    Logger.warning(
+      "Task #{inspect(task.id)} (Player ##{task.player}, Verb: #{task.verb_name}) exceeded tick quota of #{task.tick_quota}"
+    )
 
     case task.sync_caller do
       nil -> :ok
@@ -304,6 +318,9 @@ defmodule Alchemoo.Task do
         new_task = %{task | ticks_used: task.tick_quota}
         {:quota_exceeded, new_task}
 
+      {:error, reason, new_env} ->
+        {:error, reason, %{task | env: new_env}}
+
       {:error, reason} ->
         {:error, reason, task}
     end
@@ -322,7 +339,7 @@ defmodule Alchemoo.Task do
     # Last statement - return its value and env
     case Interpreter.eval(stmt, env) do
       {:ok, value, new_env} -> {value, new_env}
-      {:error, err} -> throw({:error, err})
+      {:error, err, _new_env} -> throw({:error, err})
     end
   end
 
@@ -330,7 +347,7 @@ defmodule Alchemoo.Task do
     # Not last statement - continue with updated env
     case Interpreter.eval(stmt, env) do
       {:ok, _value, new_env} -> execute_statements_loop(rest, new_env)
-      {:error, err} -> throw({:error, err})
+      {:error, err, _new_env} -> throw({:error, err})
     end
   end
 
@@ -360,7 +377,11 @@ defmodule Alchemoo.Task do
   def kill_player_tasks(player_id) do
     list_player_tasks(player_id)
     |> Enum.each(fn {_task_id, pid} ->
-      GenServer.stop(pid, :normal)
+      try do
+        GenServer.stop(pid, :normal)
+      catch
+        :exit, _ -> :ok
+      end
     end)
   end
 

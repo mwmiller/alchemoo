@@ -38,26 +38,26 @@ defmodule Alchemoo.ValueTest do
   end
 
   test "string length" do
-    assert Value.length(Value.str("hello")) == {:num, 5}
+    assert Value.length(Value.str("hello")) == {:ok, {:num, 5}}
   end
 
   test "list length" do
     list = Value.list([Value.num(1), Value.num(2), Value.num(3)])
-    assert Value.length(list) == {:num, 3}
+    assert Value.length(list) == {:ok, {:num, 3}}
   end
 
   test "string indexing" do
     str = Value.str("hello")
-    assert Value.index(str, Value.num(1)) == {:str, "h"}
-    assert Value.index(str, Value.num(5)) == {:str, "o"}
-    assert Value.index(str, Value.num(6)) == {:err, :E_RANGE}
+    assert Value.index(str, Value.num(1)) == {:ok, {:str, "h"}}
+    assert Value.index(str, Value.num(5)) == {:ok, {:str, "o"}}
+    assert Value.index(str, Value.num(6)) == {:error, :E_RANGE}
   end
 
   test "list indexing" do
     list = Value.list([Value.num(10), Value.num(20), Value.num(30)])
-    assert Value.index(list, Value.num(1)) == {:num, 10}
-    assert Value.index(list, Value.num(3)) == {:num, 30}
-    assert Value.index(list, Value.num(4)) == {:err, :E_RANGE}
+    assert Value.index(list, Value.num(1)) == {:ok, {:num, 10}}
+    assert Value.index(list, Value.num(3)) == {:ok, {:num, 30}}
+    assert Value.index(list, Value.num(4)) == {:error, :E_RANGE}
   end
 
   test "concatenation" do

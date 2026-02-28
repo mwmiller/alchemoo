@@ -222,7 +222,7 @@ defmodule Alchemoo.Parser.MOOSimple do
   end
 
   defp handle_try(rest) do
-    {body_lines, remaining} = take_until(rest, ["except", "endtry"])
+    {body_lines, remaining} = take_until(rest, ["except", "finally", "endtry"])
 
     case parse(body_lines) do
       {:ok, body} ->
@@ -234,23 +234,27 @@ defmodule Alchemoo.Parser.MOOSimple do
   end
 
   defp parse_try_rest(body, ["except " <> except_str | rest]) do
-    # Parse: except var (CODES)
-    [var, _codes] =
-      case String.split(except_str, " ", parts: 2) do
-        [v, c] -> [v, c]
-        [v] -> [v, "ANY"]
-      end
+    {var, codes_str} = split_except_header(String.trim(except_str))
+    codes = parse_except_codes(codes_str)
 
-    {except_lines, remaining} = take_until(rest, ["endtry"])
+    {except_lines, remaining} = take_until(rest, ["except", "finally", "endtry"])
 
     case {parse(except_lines), remaining} do
-      {{:ok, except_body}, ["endtry" | rest]} ->
-        {:ok,
-         %AST.Try{
-           body: body,
-           except_clauses: [%AST.Except{error_var: var, body: except_body}],
-           finally_block: nil
-         }, rest}
+      {{:ok, except_body}, _} ->
+        clause = %AST.Except{error_var: var, codes: codes, body: except_body}
+        parse_try_rest_clauses(body, remaining, [clause])
+
+      err ->
+        err
+    end
+  end
+
+  defp parse_try_rest(body, ["finally" | rest]) do
+    {finally_lines, remaining} = take_until(rest, ["endtry"])
+
+    case {parse(finally_lines), remaining} do
+      {{:ok, finally_body}, ["endtry" | rest]} ->
+        {:ok, %AST.Try{body: body, except_clauses: [], finally_block: finally_body}, rest}
 
       _ ->
         {:error, :expected_endtry}
@@ -262,6 +266,74 @@ defmodule Alchemoo.Parser.MOOSimple do
   end
 
   defp parse_try_rest(_, _), do: {:error, :expected_endtry}
+
+  defp split_except_header(str) do
+    str = String.trim(str)
+
+    cond do
+      str == "ANY" ->
+        {nil, "ANY"}
+
+      String.starts_with?(str, "(") ->
+        # No variable, just codes
+        {nil, str}
+
+      true ->
+        # Possibly: var (CODES) or just var
+        case String.split(str, ~r/\s+/, parts: 2) do
+          [var, codes] -> {var, codes}
+          [var] -> {var, "ANY"}
+        end
+    end
+  end
+
+  defp parse_except_codes("ANY"), do: :ANY
+
+  defp parse_except_codes("(" <> _ = parenthesized) do
+    inner = strip_parens(parenthesized)
+
+    case Expression.parse(inner) do
+      {:ok, expr, _} -> expr
+      _ -> :ANY
+    end
+  end
+
+  defp parse_except_codes(_), do: :ANY
+
+  defp parse_try_rest_clauses(body, ["except " <> except_str | rest], acc) do
+    # Parse another except clause
+    case parse_try_rest(body, ["except " <> except_str | rest]) do
+      {:ok, %AST.Try{except_clauses: new_clauses}, remaining} ->
+        {:ok, %AST.Try{body: body, except_clauses: acc ++ new_clauses, finally_block: nil},
+         remaining}
+
+      err ->
+        err
+    end
+  end
+
+  defp parse_try_rest_clauses(body, ["finally" | rest], acc) do
+    {finally_lines, remaining} = take_until(rest, ["endtry"])
+
+    case {parse(finally_lines), remaining} do
+      {{:ok, finally_body}, ["endtry" | rest]} ->
+        {:ok,
+         %AST.Try{
+           body: body,
+           except_clauses: acc,
+           finally_block: finally_body
+         }, rest}
+
+      _ ->
+        {:error, :expected_endtry}
+    end
+  end
+
+  defp parse_try_rest_clauses(body, ["endtry" | rest], acc) do
+    {:ok, %AST.Try{body: body, except_clauses: acc, finally_block: nil}, rest}
+  end
+
+  defp parse_try_rest_clauses(_, _, _), do: {:error, :expected_endtry}
 
   defp strip_parens(str) do
     str = String.trim(str)

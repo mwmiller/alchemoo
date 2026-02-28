@@ -2,6 +2,7 @@ defmodule Alchemoo.Builtins.Dispatch do
   @moduledoc """
   Dispatches built-in function calls to their implementations.
   """
+  alias Alchemoo.Builtins.SSH, as: SSHBuiltin
   alias Alchemoo.Value
   import Alchemoo.Builtins.Macros
   require Logger
@@ -187,6 +188,18 @@ defmodule Alchemoo.Builtins.Dispatch do
   defbuiltin(:value_bytes)
   defbuiltin(:ticks_left)
   defbuiltin(:seconds_left)
+
+  # SSH management
+  def call(:ssh_add_key, args, env), do: {:ok, SSHBuiltin.ssh_add_key(args, env), env}
+
+  def call(:ssh_remove_key, args, env),
+    do: {:ok, SSHBuiltin.ssh_remove_key(args, env), env}
+
+  def call(:ssh_list_keys, args, env),
+    do: {:ok, SSHBuiltin.ssh_list_keys(args, env), env}
+
+  def call(:ssh_key_info, args, env),
+    do: {:ok, SSHBuiltin.ssh_key_info(args, env), env}
 
   # Catch-all for unknown builtins
   def call(_name, _args, env) do

@@ -61,7 +61,9 @@ defmodule Alchemoo.Runtime do
 
       object ->
         # Check if it's a local property
-        case Enum.find_index(object.properties, &(&1.name == prop_name)) do
+        search_name = String.downcase(prop_name)
+
+        case Enum.find_index(object.properties, &(String.downcase(&1.name) == search_name)) do
           idx when is_integer(idx) ->
             # Update local property
             new_properties = List.update_at(object.properties, idx, &%{&1 | value: value})
@@ -128,7 +130,9 @@ defmodule Alchemoo.Runtime do
 
   defp find_non_builtin_property(object, prop_name, runtime) do
     # Check local properties first
-    case Enum.find(object.properties, &(&1.name == prop_name)) do
+    search_name = String.downcase(prop_name)
+
+    case Enum.find(object.properties, &(String.downcase(&1.name) == search_name)) do
       %Alchemoo.Database.Property{value: :clear} ->
         lookup_parent_property(object.parent, prop_name, runtime)
 
@@ -136,40 +140,49 @@ defmodule Alchemoo.Runtime do
         {:ok, prop.value}
 
       nil ->
-        find_overridden_property(object, prop_name, runtime)
+        find_overridden_property(object, search_name, runtime)
     end
   end
 
-  defp find_overridden_property(object, prop_name, runtime) do
+  defp find_overridden_property(object, search_name, runtime) do
     # Check overridden inherited properties
-    case Map.get(object.overridden_properties, prop_name) do
+    case Enum.find(object.overridden_properties, fn {k, _v} ->
+           String.downcase(k) == search_name
+         end) do
       nil ->
-        lookup_parent_property(object.parent, prop_name, runtime)
+        lookup_parent_property(object.parent, search_name, runtime)
 
-      %Alchemoo.Database.Property{value: :clear} ->
-        lookup_parent_property(object.parent, prop_name, runtime)
+      {_k, %Alchemoo.Database.Property{value: :clear}} ->
+        lookup_parent_property(object.parent, search_name, runtime)
 
-      prop ->
+      {_k, prop} ->
         {:ok, prop.value}
     end
   end
 
-  defp lookup_builtin_property(object, "name"), do: {:ok, {:str, object.name}}
-  defp lookup_builtin_property(object, "owner"), do: {:ok, {:obj, object.owner}}
-  defp lookup_builtin_property(object, "location"), do: {:ok, {:obj, object.location}}
+  defp lookup_builtin_property(object, prop_name) do
+    case String.downcase(prop_name) do
+      "name" -> {:ok, {:str, object.name}}
+      "owner" -> {:ok, {:obj, object.owner}}
+      "location" -> {:ok, {:obj, object.location}}
+      "contents" -> {:ok, {:list, Enum.map(object.contents, &Value.obj/1)}}
+      "parent" -> {:ok, {:obj, object.parent}}
+      _ -> lookup_builtin_flags(object, prop_name)
+    end
+  end
 
-  defp lookup_builtin_property(object, "contents"),
-    do: {:ok, {:list, Enum.map(object.contents, &Value.obj/1)}}
+  defp lookup_builtin_flags(object, prop_name) do
+    case String.downcase(prop_name) do
+      "wizard" ->
+        {:ok, Value.num(if Flags.set?(object.flags, Flags.wizard()), do: 1, else: 0)}
 
-  defp lookup_builtin_property(object, "parent"), do: {:ok, {:obj, object.parent}}
+      "programmer" ->
+        {:ok, Value.num(if Flags.set?(object.flags, Flags.programmer()), do: 1, else: 0)}
 
-  defp lookup_builtin_property(object, "wizard"),
-    do: {:ok, Value.num(if Flags.set?(object.flags, Flags.wizard()), do: 1, else: 0)}
-
-  defp lookup_builtin_property(object, "programmer"),
-    do: {:ok, Value.num(if Flags.set?(object.flags, Flags.programmer()), do: 1, else: 0)}
-
-  defp lookup_builtin_property(_object, _prop_name), do: :not_builtin
+      _ ->
+        :not_builtin
+    end
+  end
 
   defp lookup_parent_property(parent_id, prop_name, runtime) when parent_id >= 0 do
     case Map.get(runtime.objects, parent_id) do
@@ -285,14 +298,14 @@ defmodule Alchemoo.Runtime do
       {:ok, result, final_env} ->
         {:ok, result, Map.get(final_env, :runtime, runtime)}
 
-      {:error, reason} ->
+      {:error, reason, _final_env} ->
         handle_exec_failure(verb, this_id, reason, context)
     end
   end
 
   defp handle_exec_failure(verb, this_id, reason, context) do
     # If execution fails, invalidate the cache just in case the AST is problematic
-    Logger.info(
+    Logger.debug(
       "Runtime: verb execution failed for ##{this_id}:#{verb.name}, invalidating AST cache"
     )
 
@@ -395,9 +408,15 @@ defmodule Alchemoo.Runtime do
   rescue
     e ->
       Logger.error("Runtime: execution exception: #{inspect(e)}")
-      {:error, e}
+      {:error, e, env}
   catch
-    {:return, val} -> {:ok, val, env}
-    {:error, err} -> {:error, err}
+    {:return, val} ->
+      {:ok, val, env}
+
+    {:error, err, new_env} ->
+      {:error, err, new_env}
+
+    {:error, err} ->
+      {:error, err, env}
   end
 end

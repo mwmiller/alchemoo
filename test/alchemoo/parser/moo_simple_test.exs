@@ -64,7 +64,7 @@ defmodule Alchemoo.Parser.MOOSimpleTest do
         Enum.reduce(stmts, %{}, fn stmt, env ->
           case Interpreter.eval(stmt, env) do
             {:ok, _val, new_env} -> new_env
-            {:error, _} -> env
+            {:error, _, _} -> env
           end
         end)
       catch
@@ -90,7 +90,7 @@ defmodule Alchemoo.Parser.MOOSimpleTest do
         Enum.reduce(stmts, %{}, fn stmt, env ->
           case Interpreter.eval(stmt, env) do
             {:ok, _val, new_env} -> new_env
-            {:error, _} -> env
+            {:error, _, _} -> env
           end
         end)
       catch
