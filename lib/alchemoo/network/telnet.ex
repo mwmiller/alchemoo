@@ -5,11 +5,12 @@ defmodule Alchemoo.Network.Telnet do
   """
   require Logger
 
-  # CONFIG: Should be extracted to config
-  # CONFIG: :alchemoo, :telnet_port
-  @default_port 7777
-  # CONFIG: :alchemoo, :max_connections
-  @max_connections 1000
+  defp default_port do
+    config = Application.get_env(:alchemoo, :network, [])
+    (config[:telnet] && config[:telnet][:port]) || 7777
+  end
+
+  defp max_connections, do: Application.get_env(:alchemoo, :max_connections, 1000)
 
   def child_spec(opts) do
     %{
@@ -24,14 +25,14 @@ defmodule Alchemoo.Network.Telnet do
   @doc "Start the Telnet listener"
   def start_link(opts \\ []) do
     port =
-      case Keyword.get(opts, :port, @default_port) do
+      case Keyword.get(opts, :port, default_port()) do
         fun when is_function(fun, 0) -> fun.()
         val -> val
       end
 
     ranch_opts = %{
       socket_opts: [port: port],
-      max_connections: @max_connections,
+      max_connections: max_connections(),
       num_acceptors: 10
     }
 

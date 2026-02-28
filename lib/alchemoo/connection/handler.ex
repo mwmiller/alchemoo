@@ -34,6 +34,7 @@ defmodule Alchemoo.Connection.Handler do
     },
     waiting_tasks: [],
     active_task: nil,
+    initial_message: nil,
     state: :connected
   ]
 
@@ -71,38 +72,69 @@ defmodule Alchemoo.Connection.Handler do
 
   @impl true
   def init(opts) do
-    socket = Keyword.fetch!(opts, :socket)
+    socket = Keyword.get(opts, :socket)
     transport = Keyword.get(opts, :transport, :ranch_tcp)
+    player_id_opt = Keyword.get(opts, :player_id)
 
-    case transport.peername(socket) do
+    peer_info = resolve_peer_info(socket, transport, Keyword.get(opts, :peer_info))
+    conn_id = player_id_opt || -(1000 + :erlang.phash2(make_ref()))
+
+    conn = %__MODULE__{
+      socket: socket,
+      transport: transport,
+      connected_at: System.system_time(:second),
+      last_activity: System.system_time(:second),
+      peer_info: peer_info,
+      player_id: conn_id,
+      connection_options: initial_options(transport),
+      initial_message: Keyword.get(opts, :initial_message)
+    }
+
+    Logger.info("New connection from #{peer_info} assigned ID #{conn_id}")
+
+    {:ok, conn, {:continue, :initial_login}}
+  end
+
+  defp resolve_peer_info(socket, transport, initial_peer) do
+    case transport && transport.peername(socket) do
       {:ok, {ip, port}} ->
-        peer_info = "#{:inet.ntoa(ip)}:#{port}"
-        # Unique negative ID for un-logged-in connections
-        conn_id = -(1000 + :erlang.phash2(make_ref()))
+        case :inet.ntoa(ip) do
+          {:error, _} -> initial_peer || "unknown"
+          address -> "#{address}:#{port}"
+        end
 
-        conn = %__MODULE__{
-          socket: socket,
-          transport: transport,
-          connected_at: System.system_time(:second),
-          last_activity: System.system_time(:second),
-          peer_info: peer_info,
-          player_id: conn_id
-        }
-
-        Logger.info("New connection from #{peer_info} assigned ID #{conn_id}")
-
-        {:ok, conn, {:continue, :initial_login}}
-
-      {:error, _reason} ->
-        {:stop, :normal}
+      _ ->
+        initial_peer || "unknown"
     end
   end
 
+  defp initial_options(_transport) do
+    # Telnet clients typically do local echo (client-echo 1)
+    # SSH connections via our Readline module also handle their own echoing
+    # so we set client-echo to 1 to prevent the Connection.Handler from
+    # echoing the submitted line again.
+    %{
+      "binary" => 0,
+      "hold-input" => 0,
+      "client-echo" => 1,
+      "flush-command" => ".flush",
+      "output-delimiters" => ["", ""]
+    }
+  end
+
+  defp system_tick_quota, do: Application.get_env(:alchemoo, :system_tick_quota, 1_000_003)
+
   @impl true
   def handle_continue(:initial_login, conn) do
-    # Trigger initial null do_login_command (no arguments)
-    new_conn = run_login_task(conn, "", [])
-    {:noreply, new_conn}
+    if conn.player_id && conn.player_id >= 0 do
+      # Pre-authenticated (SSH)
+      new_conn = finalize_login(conn, conn.player_id)
+      {:noreply, new_conn}
+    else
+      # Trigger initial null do_login_command (no arguments)
+      new_conn = run_login_task(conn, "", [])
+      {:noreply, new_conn}
+    end
   end
 
   @impl true
@@ -227,15 +259,81 @@ defmodule Alchemoo.Connection.Handler do
 
   @impl true
   def handle_info({:tcp, socket, data}, %{socket: socket} = conn) do
+    handle_input_data(conn, data)
+  end
+
+  @impl true
+  def handle_info({:network_input, data}, conn) do
+    handle_input_data(conn, data)
+  end
+
+  @impl true
+  def handle_info({:tcp_closed, socket}, %{socket: socket} = conn) do
+    handle_network_closed(conn, :normal)
+  end
+
+  @impl true
+  def handle_info({:network_closed, reason}, conn) do
+    handle_network_closed(conn, reason)
+  end
+
+  @impl true
+  def handle_info({:tcp_error, _socket, reason}, conn) do
+    Logger.error("Connection error: #{inspect(reason)}")
+    {:stop, :normal, conn}
+  end
+
+  @impl true
+  def handle_info({:network_error, reason}, conn) do
+    Logger.error("Network error: #{inspect(reason)}")
+    {:stop, :normal, conn}
+  end
+
+  @impl true
+  def handle_info({:window_change, width, height}, conn) do
+    # Handle SSH window change (SIGWINCH)
+    # Could update player properties like linelen/num_lines here if desired
+    Logger.info("Window changed for player ##{conn.player_id}: #{width}x#{height}")
+    {:noreply, conn}
+  end
+
+  @impl true
+  def terminate(reason, conn) do
+    if trace_connections?(),
+      do: Logger.debug("Connection handler #{conn.player_id} terminating: #{inspect(reason)}")
+
+    if conn.player_id && conn.player_id >= 0 do
+      try do
+        MOOTask.kill_player_tasks(conn.player_id)
+      catch
+        kind, reason ->
+          Logger.error("Error killing player tasks during terminate: #{inspect({kind, reason})}")
+      end
+    end
+
+    if conn.transport && conn.socket do
+      conn.transport.close(conn.socket)
+    end
+
+    :ok
+  end
+
+  defp handle_input_data(conn, data) do
     conn = %{conn | last_activity: System.system_time(:second)}
+
+    # Server-side echo: if client-echo is 0 (MOO semantics: server echoes), we echo back characters.
+    # Note: LambdaMOO 'client-echo' option: 0 means server echoes, 1 means client echoes.
+    if Map.get(conn.connection_options, "client-echo") == 0 do
+      send_text(conn, data)
+    end
+
     new_buffer = conn.input_buffer <> data
     {lines, remaining} = extract_lines(new_buffer)
     new_conn = Enum.reduce(lines, conn, &process_input(&2, &1))
     {:noreply, %{new_conn | input_buffer: remaining}}
   end
 
-  @impl true
-  def handle_info({:tcp_closed, socket}, %{socket: socket} = conn) do
+  defp handle_network_closed(conn, _reason) do
     if conn.player_id && conn.player_id >= 0 do
       Logger.info("Player ##{conn.player_id} disconnected")
       MOOTask.kill_player_tasks(conn.player_id)
@@ -246,18 +344,80 @@ defmodule Alchemoo.Connection.Handler do
     {:stop, :normal, conn}
   end
 
-  @impl true
-  def handle_info({:tcp_error, _socket, reason}, conn) do
-    Logger.error("Connection error: #{inspect(reason)}")
-    {:stop, :normal, conn}
-  end
-
   ## Private Helpers
 
   defp finalize_login(conn, player_id) do
+    # Disconnect any existing connections for this player
+    redirected? = boot_existing_connection(player_id)
+
+    # Initialize connection properties in DB before core verbs see them
+    now = System.system_time(:second)
+
+    # previous_connection must be truthy (non-zero) to avoid "Something was broken"
+    # Standard format is {time, host}
+    case DB.get_property(player_id, "previous_connection") do
+      {:ok, {:num, 0}} ->
+        # First time login - set a dummy list to satisfy the truthiness check
+        DB.set_property(
+          player_id,
+          "previous_connection",
+          Value.list([Value.num(0), Value.str("initial")])
+        )
+
+      {:ok, _val} ->
+        # Preserve whatever was there if it's not 0
+        :ok
+
+      _ ->
+        # Property missing? Set a safe default
+        DB.set_property(
+          player_id,
+          "previous_connection",
+          Value.list([Value.num(0), Value.str("initial")])
+        )
+    end
+
+    # Also update last_connect_time
+    DB.set_property(player_id, "last_connect_time", Value.num(now))
+
     Logger.info("Connection #{conn.player_id} logged in as ##{player_id}")
     spawn_system_task("user_connected", [Value.obj(player_id)])
+
+    conn =
+      if redirected? do
+        queue_output(conn, "\n*** Redirecting old connection to this port ***\n")
+      else
+        conn
+      end
+
+    conn =
+      if conn.initial_message do
+        queue_output(conn, conn.initial_message)
+      else
+        conn
+      end
+
     %{conn | state: :logged_in, player_id: player_id}
+  end
+
+  defp boot_existing_connection(player_id) do
+    # Get all connection handlers
+    pids =
+      Alchemoo.Connection.Supervisor.list_connections()
+      |> Enum.filter(&(&1 != self()))
+
+    Enum.reduce(pids, false, fn pid, acc ->
+      case info(pid) do
+        %{player_id: ^player_id, state: :logged_in} ->
+          Logger.info("Booting existing connection for ##{player_id} (PID #{inspect(pid)})")
+          send_output(pid, "\n*** Disconnected: another connection has been established. ***\n")
+          close(pid)
+          true
+
+        _ ->
+          acc
+      end
+    end)
   end
 
   defp run_login_task(conn, argstr, args) do
@@ -283,7 +443,8 @@ defmodule Alchemoo.Connection.Handler do
           caller_perms: 2,
           args: Enum.map(args, &Value.str/1),
           handler_pid: self(),
-          verb_name: "do_login_command"
+          verb_name: "do_login_command",
+          tick_quota: system_tick_quota()
         ]
 
         code = Enum.join(verb.code, "\n")
@@ -354,7 +515,8 @@ defmodule Alchemoo.Connection.Handler do
           caller: -1,
           args: args,
           handler_pid: self(),
-          verb_name: verb_name
+          verb_name: verb_name,
+          tick_quota: system_tick_quota()
         ]
 
         code = Enum.join(verb.code, "\n")
@@ -396,7 +558,27 @@ defmodule Alchemoo.Connection.Handler do
     end
   end
 
-  defp send_text(conn, text), do: conn.transport.send(conn.socket, text)
+  defp send_text(%{transport: nil}, _text) do
+    # For testing or internal connections
+    :ok
+  end
+
+  defp send_text(conn, text) do
+    # Standard terminal behavior (Telnet/SSH) requires \r\n for newlines
+    # to return the cursor to the start of the line.
+    # We normalize all combinations (\r\n, \n, \r) to \r\n.
+    normalized_text =
+      text
+      |> String.replace("\r\n", "\n")
+      |> String.replace("\r", "\n")
+      |> String.replace("\n", "\r\n")
+
+    conn.transport.send(conn.socket, normalized_text)
+  rescue
+    _ ->
+      Logger.error("Failed to send text via transport #{inspect(conn.transport)}")
+      {:error, :transport_failed}
+  end
 
   defp extract_lines(buffer) do
     lines = String.split(buffer, ["\n", "\r\n", "\r"], trim: true)
@@ -476,4 +658,6 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   defp login_parse_fell_back?(_input_args, _parse), do: false
+
+  defp trace_connections?, do: Application.get_env(:alchemoo, :trace_connections, false)
 end

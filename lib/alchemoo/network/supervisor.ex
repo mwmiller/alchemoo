@@ -5,16 +5,13 @@ defmodule Alchemoo.Network.Supervisor do
   """
   use Supervisor
 
-  # CONFIG: Should be extracted to config
-  # Default configuration for network listeners
-  @default_config %{
-    # CONFIG: :alchemoo, :telnet
-    telnet: %{enabled: true, port: 7777},
-    # CONFIG: :alchemoo, :ssh
-    ssh: %{enabled: false, port: 2222},
-    # CONFIG: :alchemoo, :websocket
-    websocket: %{enabled: false, port: 4000}
-  }
+  defp default_config do
+    Application.get_env(:alchemoo, :network, %{
+      telnet: %{enabled: true, port: 7777},
+      ssh: %{enabled: false, port: 2222},
+      websocket: %{enabled: false, port: 4000}
+    })
+  end
 
   def start_link(opts) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
@@ -22,7 +19,7 @@ defmodule Alchemoo.Network.Supervisor do
 
   @impl true
   def init(opts) do
-    config = Keyword.get(opts, :config, @default_config)
+    config = Keyword.get(opts, :config, default_config())
 
     children = build_children(config)
 
@@ -37,18 +34,19 @@ defmodule Alchemoo.Network.Supervisor do
   end
 
   defp maybe_add_telnet(children, %{enabled: true, port: port}) do
-    children ++ [{Alchemoo.Network.Telnet, port: port}]
+    children ++ [{Alchemoo.Network.Telnet, port: resolve_port(port)}]
   end
 
   defp maybe_add_telnet(children, _), do: children
 
-  defp maybe_add_ssh(children, %{enabled: true, port: _port}) do
-    # SSH implementation ready, just needs to be enabled
-    # children ++ [{Alchemoo.Network.SSH, port: port}]
-    children
+  defp maybe_add_ssh(children, %{enabled: true, port: port}) do
+    children ++ [{Alchemoo.Network.SSH, port: resolve_port(port)}]
   end
 
   defp maybe_add_ssh(children, _), do: children
+
+  defp resolve_port(port) when is_function(port), do: port.()
+  defp resolve_port(port), do: port
 
   defp maybe_add_websocket(children, %{enabled: true, port: _port}) do
     # WebSocket not implemented yet
