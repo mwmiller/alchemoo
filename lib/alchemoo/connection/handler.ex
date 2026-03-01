@@ -107,6 +107,7 @@ defmodule Alchemoo.Connection.Handler do
   defp resolve_peer_info(socket, transport, _initial_peer) do
     case transport && transport.peername(socket) do
       {:ok, {ip, _port}} ->
+        Logger.info("Resolving peer info for IP: #{inspect(ip)}")
         reverse_dns(ip)
 
       other ->
@@ -114,7 +115,7 @@ defmodule Alchemoo.Connection.Handler do
           "Peer resolution failed: transport=#{inspect(transport)} socket=#{inspect(socket)} result=#{inspect(other)}"
         )
 
-        "unknown"
+        "0.0.0.0"
     end
   end
 
@@ -127,16 +128,24 @@ defmodule Alchemoo.Connection.Handler do
         ip_to_string(ip)
     end
   rescue
-    _ -> ip_to_string(ip)
+    e ->
+      Logger.info("Reverse DNS crash for #{inspect(ip)}: #{inspect(e)}")
+      ip_to_string(ip)
   end
 
   defp ip_to_string(ip) do
     case :inet.ntoa(ip) do
-      {:error, _} -> "unknown"
-      address -> to_string(address)
+      {:error, _} ->
+        Logger.info("inet.ntoa failed for #{inspect(ip)}")
+        "0.0.0.0"
+
+      address ->
+        to_string(address)
     end
   rescue
-    _ -> "unknown"
+    e ->
+      Logger.info("ip_to_string crash for #{inspect(ip)}: #{inspect(e)}")
+      "0.0.0.0"
   end
 
   defp initial_options(_transport) do
@@ -360,8 +369,8 @@ defmodule Alchemoo.Connection.Handler do
     else
       # Use Readline for line editing if available
       # (SSH always has it, Telnet has it if we negotiated WILL ECHO/SGA)
-      # We only enable server-side echo in Readline if client-echo is 0 (server echoes)
-      echo? = Map.get(conn.connection_options, "client-echo") == 0
+      # We force echo to true for now to ensure usability while using our Readline editor.
+      echo? = true
 
       readline_state =
         conn.readline_state || Readline.new(conn.socket, conn.transport, echo: echo?)
