@@ -2,7 +2,7 @@
 
 A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM VM.
 
-**Version:** 0.6.0  
+**Version:** 0.6.3  
 
 ## Features
 
@@ -18,6 +18,8 @@ A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM 
 - ✅ **MOO Export** - Export databases in LambdaMOO Format 4
 - ✅ **Connection Management** - Advanced session takeover and logout handling
 - ✅ **Fingerprint Art** - SSH key identification via 'drunken bishop' visualizations
+- ✅ **Secure Permissions** - Object, property, and verb permissions aligned with LambdaMOO
+- ✅ **Preposition Support** - Full multi-word preposition matching in commands
 
 ## Status
 
@@ -32,8 +34,8 @@ Alchemoo is now a functional MOO server that can:
 - Handle multiple concurrent players
 - Automatically checkpoint and recover from crashes
 
-**Current Test Status (this branch, Feb 26, 2026):** 144 tests, 0 failures  
-**Commits:** 70+
+**Current Test Status (this branch, March 1, 2026):** 161 tests, 0 failures  
+**Commits:** 80+
 
 ## Quick Start
 
@@ -160,7 +162,7 @@ elixir examples/task_demo.exs
 - [x] SSH support (Public Key & Password)
 - [x] Automated SSH key registration
 - [x] Object matching in commands
-- [ ] Preposition validation
+- [x] Preposition validation
 - [ ] Performance optimization
 - [ ] WebSocket support
 - [ ] Implement remaining network stubs (listen/unlisten)
