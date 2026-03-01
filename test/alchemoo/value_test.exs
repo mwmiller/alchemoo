@@ -71,7 +71,13 @@ defmodule Alchemoo.ValueTest do
   test "to_literal conversion" do
     assert Value.to_literal(Value.num(42)) == "42"
     assert Value.to_literal(Value.obj(123)) == "#123"
-    assert Value.to_literal(Value.str("hello")) == "hello"
-    assert Value.to_literal(Value.list([Value.num(1), Value.num(2)])) == "{1, 2}"
+    assert Value.to_literal(Value.str("hello")) == "\"hello\""
+    assert Value.to_literal(Value.list([Value.num(1), Value.str("a")])) == "{1, \"a\"}"
+  end
+
+  test "to_string conversion" do
+    assert Value.to_string(Value.num(42)) == "42"
+    assert Value.to_string(Value.obj(123)) == "#123"
+    assert Value.to_string(Value.str("hello")) == "hello"
   end
 end

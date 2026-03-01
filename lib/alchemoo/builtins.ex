@@ -376,7 +376,7 @@ defmodule Alchemoo.Builtins do
 
   # tostr(values...) - convert to string
   def tostr(args) do
-    str = Enum.map_join(args, &Value.to_literal/1)
+    str = Enum.map_join(args, &Value.to_string/1)
     Value.str(str)
   end
 

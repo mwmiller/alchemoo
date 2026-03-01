@@ -276,12 +276,29 @@ defmodule Alchemoo.Value do
   def set_index(_, _, _), do: {:error, :E_TYPE}
 
   @doc """
+  Convert value to a simple string representation (unquoted).
+  Used by tostr() built-in.
+  """
+  def to_string({:num, n}), do: Integer.to_string(n)
+  def to_string({:float, n}), do: :erlang.float_to_binary(n, [:compact, decimals: 1])
+  def to_string({:obj, n}), do: "##{n}"
+  def to_string({:str, s}), do: s
+  def to_string({:err, e}), do: Atom.to_string(e)
+  def to_string({:list, _}), do: "{list}"
+  def to_string(:clear), do: ""
+  def to_string(:none), do: ""
+
+  @doc """
   Convert value to string representation.
   """
   def to_literal({:num, n}), do: Integer.to_string(n)
-  def to_literal({:float, n}), do: :erlang.float_to_binary(n, [:compact])
+  def to_literal({:float, n}), do: :erlang.float_to_binary(n, [:compact, decimals: 1])
   def to_literal({:obj, n}), do: "##{n}"
-  def to_literal({:str, s}), do: s
+
+  def to_literal({:str, s}) do
+    "\"" <> escape_string(s) <> "\""
+  end
+
   def to_literal({:err, e}), do: Atom.to_string(e)
   def to_literal(:clear), do: "<clear>"
   def to_literal(:none), do: "<none>"
@@ -292,5 +309,11 @@ defmodule Alchemoo.Value do
 
   def to_literal({:list, items}) do
     "{" <> Enum.map_join(items, ", ", &to_literal/1) <> "}"
+  end
+
+  defp escape_string(s) do
+    s
+    |> String.replace("\\", "\\\\")
+    |> String.replace("\"", "\\\"")
   end
 end
