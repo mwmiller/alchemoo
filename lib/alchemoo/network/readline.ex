@@ -44,12 +44,7 @@ defmodule Alchemoo.Network.Readline do
     line = state.buffer
     send_raw(state, "\r\n")
 
-    new_history =
-      if line != "" and List.first(state.history) != line do
-        [line | Enum.take(state.history, 99)]
-      else
-        state.history
-      end
+    new_history = update_history(state.history, line)
 
     {:line, line,
      %{state | buffer: "", cursor: 0, history: new_history, history_index: -1, current_save: ""}}
@@ -58,16 +53,18 @@ defmodule Alchemoo.Network.Readline do
 
   # Backspace (Ctrl-H or Del)
   defp process_bytes(<<key, rest::binary>>, state) when key in [8, 127] do
-    if state.cursor > 0 do
-      {left, right} = String.split_at(state.buffer, state.cursor - 1)
-      new_buffer = left <> String.slice(right, 1..-1//1)
-      new_cursor = state.cursor - 1
+    case state.cursor > 0 do
+      true ->
+        {left, right} = String.split_at(state.buffer, state.cursor - 1)
+        new_buffer = left <> String.slice(right, 1..-1//1)
+        new_cursor = state.cursor - 1
 
-      new_state = %{state | buffer: new_buffer, cursor: new_cursor}
-      redraw(new_state)
-      process_bytes(rest, new_state)
-    else
-      process_bytes(rest, state)
+        new_state = %{state | buffer: new_buffer, cursor: new_cursor}
+        redraw(new_state)
+        process_bytes(rest, new_state)
+
+      false ->
+        process_bytes(rest, state)
     end
   end
 
@@ -86,8 +83,9 @@ defmodule Alchemoo.Network.Readline do
   defp process_bytes(<<27, ?[, ?C, rest::binary>>, state) do
     new_cursor = min(String.length(state.buffer), state.cursor + 1)
 
-    if new_cursor != state.cursor do
-      send_raw(state, @ansi_cursor_right)
+    case new_cursor != state.cursor do
+      true -> send_raw(state, @ansi_cursor_right)
+      false -> :ok
     end
 
     process_bytes(rest, %{state | cursor: new_cursor})
@@ -97,8 +95,9 @@ defmodule Alchemoo.Network.Readline do
   defp process_bytes(<<27, ?[, ?D, rest::binary>>, state) do
     new_cursor = max(0, state.cursor - 1)
 
-    if new_cursor != state.cursor do
-      send_raw(state, @ansi_cursor_left)
+    case new_cursor != state.cursor do
+      true -> send_raw(state, @ansi_cursor_left)
+      false -> :ok
     end
 
     process_bytes(rest, %{state | cursor: new_cursor})
@@ -152,6 +151,13 @@ defmodule Alchemoo.Network.Readline do
     process_bytes(rest, state)
   end
 
+  defp update_history(history, line) do
+    case line != "" and List.first(history) != line do
+      true -> [line | Enum.take(history, 99)]
+      false -> history
+    end
+  end
+
   defp handle_rest({:line, line, state}, <<>>), do: {:line, line, state}
 
   defp handle_rest({:line, line, state}, rest) do
@@ -166,7 +172,11 @@ defmodule Alchemoo.Network.Readline do
     new_idx = state.history_index - dir
 
     # Save current buffer if we just started navigating history
-    save = if state.history_index == -1, do: state.buffer, else: state.current_save
+    save =
+      case state.history_index do
+        -1 -> state.buffer
+        _ -> state.current_save
+      end
 
     cond do
       new_idx == -1 ->
@@ -203,10 +213,9 @@ defmodule Alchemoo.Network.Readline do
   defp move_cursor(pos, state) do
     diff = pos - state.cursor
 
-    if diff < 0 do
-      send_raw(state, String.duplicate(@ansi_cursor_left, abs(diff)))
-    else
-      send_raw(state, String.duplicate(@ansi_cursor_right, diff))
+    case diff < 0 do
+      true -> send_raw(state, String.duplicate(@ansi_cursor_left, abs(diff)))
+      false -> send_raw(state, String.duplicate(@ansi_cursor_right, diff))
     end
 
     %{state | cursor: pos}
@@ -220,16 +229,15 @@ defmodule Alchemoo.Network.Readline do
     # Return to cursor position
     back = String.length(state.buffer) - state.cursor
 
-    if back > 0 do
-      send_raw(state, String.duplicate(@ansi_cursor_left, back))
+    case back > 0 do
+      true -> send_raw(state, String.duplicate(@ansi_cursor_left, back))
+      false -> :ok
     end
   end
 
-  defp send_raw(state, data) do
-    if state.echo do
-      state.transport.send(state.socket, data)
-    else
-      :ok
-    end
+  defp send_raw(%{echo: true} = state, data) do
+    state.transport.send(state.socket, data)
   end
+
+  defp send_raw(%{echo: false}, _data), do: :ok
 end
