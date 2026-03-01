@@ -8,6 +8,7 @@ defmodule Alchemoo.Command.Executor do
   alias Alchemoo.Database.Resolver
   alias Alchemoo.Database.Server, as: DB
   alias Alchemoo.Runtime
+  alias Alchemoo.Task
   alias Alchemoo.TaskSupervisor
   alias Alchemoo.Value
 
@@ -61,30 +62,6 @@ defmodule Alchemoo.Command.Executor do
       "caller" => Value.obj(player_id)
     }
 
-    # We create a "proxy" process to receive the result so we don't spam the Handler
-    # with :task_complete messages it doesn't know how to handle.
-    proxy_pid =
-      spawn(fn ->
-        receive do
-          {:task_complete, result} ->
-            Handler.send_output(handler_pid, "=> #{Value.to_literal(result)}\n")
-
-          {:task_error, reason} ->
-            Handler.send_output(handler_pid, "=> ERROR: #{inspect(reason)}\n")
-        after
-          30_000 -> :ok
-        end
-      end)
-
-    task_opts = [
-      player: player_id,
-      this: player_id,
-      caller: player_id,
-      handler_pid: handler_pid,
-      verb_name: "eval",
-      sync_caller: proxy_pid
-    ]
-
     # Reference behavior from LambdaMOO server.c:
     # If it starts with ;; it's a long-form/multi-line (no return prefix)
     # If it starts with ; it's an expression (add return prefix)
@@ -99,14 +76,21 @@ defmodule Alchemoo.Command.Executor do
         "return " <> trimmed <> ";"
       end
 
-    case TaskSupervisor.spawn_task(code, env, task_opts) do
-      {:ok, pid} ->
-        {:ok, pid}
+    task_opts = [
+      player: player_id,
+      this: player_id,
+      caller: player_id,
+      handler_pid: handler_pid,
+      verb_name: "eval"
+    ]
+
+    case Task.run(code, env, task_opts) do
+      {:ok, result} ->
+        Handler.send_output(handler_pid, "=> #{Value.to_literal(result)}\n")
+        {:ok, self()}
 
       {:error, reason} ->
-        send_error(handler_pid, "Error executing eval: #{inspect(reason)}")
-        # Kill proxy since it won't receive anything
-        Process.exit(proxy_pid, :kill)
+        Handler.send_output(handler_pid, "=> ERROR: #{inspect(reason)}\n")
         {:error, reason}
     end
   end
@@ -124,44 +108,56 @@ defmodule Alchemoo.Command.Executor do
   defp execute_via_core_do_command(command, player_id, handler_pid) do
     case DB.find_verb(0, "do_command") do
       {:ok, 0, verb} ->
-        words = String.split(command, ~r/\s+/, trim: true)
-        runtime = Runtime.new(DB.get_snapshot())
-
-        env = %{
-          :runtime => runtime,
-          "player" => Value.obj(player_id),
-          "this" => Value.obj(0),
-          "caller" => Value.obj(-1),
-          "verb" => Value.str("do_command"),
-          "argstr" => Value.str(command),
-          "args" => Value.list(Enum.map(words, &Value.str/1))
-        }
-
-        task_opts = [
-          player: player_id,
-          this: 0,
-          caller: -1,
-          perms: 2,
-          caller_perms: 2,
-          args: Enum.map(words, &Value.str/1),
-          handler_pid: handler_pid,
-          verb_name: "do_command"
-        ]
-
-        code = Enum.join(verb.code, "\n")
-
-        case TaskSupervisor.spawn_task(code, env, task_opts) do
-          {:ok, pid} ->
-            {:ok, pid}
-
-          {:error, reason} ->
-            send_error(handler_pid, "Error executing command: #{inspect(reason)}")
-            {:error, reason}
-        end
+        run_core_do_command(command, player_id, handler_pid, verb)
 
       _ ->
         :fallback
     end
+  end
+
+  defp run_core_do_command(command, player_id, handler_pid, verb) do
+    words = String.split(command, ~r/\s+/, trim: true)
+    runtime = Runtime.new(DB.get_snapshot())
+
+    env =
+      build_do_command_env(runtime, player_id, command, words)
+
+    task_opts = [
+      player: player_id,
+      this: 0,
+      caller: -1,
+      perms: 2,
+      caller_perms: 2,
+      args: Enum.map(words, &Value.str/1),
+      handler_pid: handler_pid,
+      verb_name: "do_command"
+    ]
+
+    code = Enum.join(verb.code, "\n")
+
+    case Task.run(code, env, task_opts) do
+      {:ok, result} ->
+        if Value.truthy?(result) do
+          {:ok, self()}
+        else
+          :fallback
+        end
+
+      {:error, _reason} ->
+        :fallback
+    end
+  end
+
+  defp build_do_command_env(runtime, player_id, command, words) do
+    %{
+      :runtime => runtime,
+      "player" => Value.obj(player_id),
+      "this" => Value.obj(0),
+      "caller" => Value.obj(-1),
+      "verb" => Value.str("do_command"),
+      "argstr" => Value.str(command),
+      "args" => Value.list(Enum.map(words, &Value.str/1))
+    }
   end
 
   defp execute_with_local_parser(command, player_id, handler_pid) do

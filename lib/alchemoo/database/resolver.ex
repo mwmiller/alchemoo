@@ -9,15 +9,23 @@ defmodule Alchemoo.Database.Resolver do
 
   @doc """
   Find a verb on an object or its ancestors using a database snapshot.
+  Supports both simple name lookup and full command-based matching.
   """
-  def find_verb(db, obj_id, verb_name) do
+  def find_verb(db, obj_id, verb_name) when is_binary(verb_name) do
     case Map.get(db.objects, obj_id) do
       nil -> {:error, :E_INVIND}
-      obj -> do_find_verb(db, obj, verb_name)
+      obj -> do_find_simple_verb(db, obj, verb_name)
     end
   end
 
-  defp do_find_verb(db, obj, verb_name) do
+  def find_verb(db, obj_id, %{verb: verb_name} = command) do
+    case Map.get(db.objects, obj_id) do
+      nil -> {:error, :E_INVIND}
+      obj -> do_find_command_verb(db, obj, verb_name, command)
+    end
+  end
+
+  defp do_find_simple_verb(db, obj, verb_name) do
     case Enum.find(obj.verbs, &Verb.match?(&1, verb_name)) do
       nil ->
         if obj.parent >= 0,
@@ -28,6 +36,42 @@ defmodule Alchemoo.Database.Resolver do
         {:ok, obj.id, verb}
     end
   end
+
+  defp do_find_command_verb(db, obj, verb_name, command) do
+    case Enum.find(obj.verbs, fn v ->
+           Verb.match?(v, verb_name) and match_args?(v, obj.id, command)
+         end) do
+      nil ->
+        if obj.parent >= 0,
+          do: find_verb(db, obj.parent, command),
+          else: {:error, :E_VERBNF}
+
+      verb ->
+        {:ok, obj.id, verb}
+    end
+  end
+
+  import Bitwise
+
+  defp match_args?(verb, obj_id, command) do
+    vdobj = verb.perms >>> 4 &&& 0x3
+    viobj = verb.perms >>> 6 &&& 0x3
+
+    match_arg?(vdobj, obj_id, Map.get(command, :dobj_id, -1)) and
+      match_prep?(verb.prep, command.prep) and
+      match_arg?(viobj, obj_id, Map.get(command, :iobj_id, -1))
+  end
+
+  # ASPEC_NONE = 0, ASPEC_ANY = 1, ASPEC_THIS = 2
+  defp match_arg?(0, _obj_id, -1), do: true
+  defp match_arg?(1, _obj_id, _id), do: true
+  defp match_arg?(2, obj_id, id) when obj_id == id, do: true
+  defp match_arg?(_, _, _), do: false
+
+  # PREP_ANY = -2
+  defp match_prep?(-2, _actual), do: true
+  defp match_prep?(expected, actual) when expected == actual, do: true
+  defp match_prep?(_, _), do: false
 
   @doc """
   Find an object by name or alias in a list of candidate IDs.
