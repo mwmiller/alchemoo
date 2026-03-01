@@ -61,13 +61,28 @@ defmodule Alchemoo.Command.Executor do
       "caller" => Value.obj(player_id)
     }
 
+    # We create a "proxy" process to receive the result so we don't spam the Handler
+    # with :task_complete messages it doesn't know how to handle.
+    proxy_pid =
+      spawn(fn ->
+        receive do
+          {:task_complete, result} ->
+            Handler.send_output(handler_pid, "=> #{Value.to_literal(result)}\n")
+
+          {:task_error, reason} ->
+            Handler.send_output(handler_pid, "=> ERROR: #{inspect(reason)}\n")
+        after
+          30_000 -> :ok
+        end
+      end)
+
     task_opts = [
       player: player_id,
       this: player_id,
       caller: player_id,
       handler_pid: handler_pid,
       verb_name: "eval",
-      sync_caller: self()
+      sync_caller: proxy_pid
     ]
 
     # Reference behavior from LambdaMOO server.c:
@@ -86,30 +101,12 @@ defmodule Alchemoo.Command.Executor do
 
     case TaskSupervisor.spawn_task(code, env, task_opts) do
       {:ok, pid} ->
-        # For shorthand eval, we want to see the result.
-        # We spawned it with sync_caller: self(), so we can wait for completion.
-        spawn(fn ->
-          ref = Process.monitor(pid)
-
-          receive do
-            {:task_complete, result} ->
-              Handler.send_output(handler_pid, "=> #{Value.to_literal(result)}\n")
-
-            {:task_error, reason} ->
-              Handler.send_output(handler_pid, "=> ERROR: #{inspect(reason)}\n")
-
-            {:DOWN, ^ref, :process, _pid, _reason} ->
-              :ok
-          after
-            30_000 ->
-              :ok
-          end
-        end)
-
         {:ok, pid}
 
       {:error, reason} ->
         send_error(handler_pid, "Error executing eval: #{inspect(reason)}")
+        # Kill proxy since it won't receive anything
+        Process.exit(proxy_pid, :kill)
         {:error, reason}
     end
   end
