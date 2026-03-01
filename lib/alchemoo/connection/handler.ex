@@ -110,8 +110,8 @@ defmodule Alchemoo.Connection.Handler do
         reverse_dns(ip)
 
       other ->
-        Logger.debug(
-          "Peer resolution failed: transport=#{inspect(transport)} result=#{inspect(other)}"
+        Logger.info(
+          "Peer resolution failed: transport=#{inspect(transport)} socket=#{inspect(socket)} result=#{inspect(other)}"
         )
 
         "unknown"
@@ -133,7 +133,7 @@ defmodule Alchemoo.Connection.Handler do
   defp ip_to_string(ip) do
     case :inet.ntoa(ip) do
       {:error, _} -> "unknown"
-      address -> List.to_string(address)
+      address -> to_string(address)
     end
   rescue
     _ -> "unknown"
@@ -360,9 +360,13 @@ defmodule Alchemoo.Connection.Handler do
     else
       # Use Readline for line editing if available
       # (SSH always has it, Telnet has it if we negotiated WILL ECHO/SGA)
-      readline_state = conn.readline_state || Readline.new(conn.socket, conn.transport)
+      # We only enable server-side echo in Readline if client-echo is 0 (server echoes)
+      echo? = Map.get(conn.connection_options, "client-echo") == 0
 
-      case Readline.handle_input(clean_data, readline_state) do
+      readline_state =
+        conn.readline_state || Readline.new(conn.socket, conn.transport, echo: echo?)
+
+      case Readline.handle_input(clean_data, %{readline_state | echo: echo?}) do
         {:ok, next_state} ->
           {:noreply, %{conn | readline_state: next_state}}
 

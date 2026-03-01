@@ -12,17 +12,19 @@ defmodule Alchemoo.Network.Readline do
     cursor: 0,
     history: [],
     history_index: -1,
-    current_save: ""
+    current_save: "",
+    echo: true
   ]
 
   @ansi_clear_line "\e[2K\r"
   @ansi_cursor_left "\e[D"
   @ansi_cursor_right "\e[C"
 
-  def new(socket, transport) do
+  def new(socket, transport, opts \\ []) do
     %__MODULE__{
       socket: socket,
-      transport: transport
+      transport: transport,
+      echo: Keyword.get(opts, :echo, true)
     }
   end
 
@@ -224,6 +226,10 @@ defmodule Alchemoo.Network.Readline do
   end
 
   defp send_raw(state, data) do
-    state.transport.send(state.socket, data)
+    if state.echo do
+      state.transport.send(state.socket, data)
+    else
+      :ok
+    end
   end
 end
