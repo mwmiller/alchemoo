@@ -144,13 +144,13 @@ Currently, the executor only searches the player object. Full implementation sho
 
 ### Preposition Matching
 
-Verbs can specify valid prepositions:
+Alchemoo implements full multi-word preposition matching aligned with LambdaMOO's `prep_list`. Verbs can specify valid prepositions:
 
 ```moo
 @verb me:put this in/on/under that
 ```
 
-The executor should validate prepositions against verb definitions.
+The parser correctly identifies these and populates `prepstr` and the corresponding index.
 
 ### Wildcard Verbs
 

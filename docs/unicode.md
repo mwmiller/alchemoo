@@ -234,6 +234,6 @@ Just use Unicode freely in:
 - Chat messages
 - Descriptions
 
-It all just works! 🎉
+---
 
-**Note:** If you have MOO code that explicitly counts bytes (very rare), it will get grapheme counts instead. This is usually the desired behavior for Unicode text.
+**This documentation is up to date as of March 1, 2026.**

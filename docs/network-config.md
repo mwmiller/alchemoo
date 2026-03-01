@@ -1,145 +1,105 @@
-# Alchemoo Network Configuration Examples
+# Alchemoo Network Configuration
 
-## Default Configuration (Hardcoded)
+Alchemoo supports multiple network transports, all managed through a unified connection layer.
 
-By default, Alchemoo starts with:
-- Telnet: enabled on port 7777
-- SSH: disabled
-- WebSocket: disabled
+## Configuration
 
-## Future: config/config.exs
-
-When configuration is extracted, you'll be able to configure like this:
+All network settings are managed in `config/config.exs`:
 
 ```elixir
 # config/config.exs
-import Config
-
-config :alchemoo,
-  # Network listeners
-  network: %{
-    telnet: %{
-      enabled: true,
-      port: 7777
-    },
-    ssh: %{
-      enabled: true,
-      port: 2222
-    },
-    websocket: %{
-      enabled: false,
-      port: 4000
-    }
+config :alchemoo, :network,
+  telnet: %{
+    enabled: true,
+    port: 7777
+  },
+  ssh: %{
+    enabled: true,
+    port: 2222,
+    # Optional: custom host key directory
+    system_dir: "/path/to/ssh/keys"
+  },
+  websocket: %{
+    enabled: true,
+    port: 4444
   }
 ```
+
+## Supported Transports
+
+### Telnet (Port 7777)
+The classic MOO transport. Uses `:ranch` for high-performance TCP handling.
+- ✅ Standard Telnet protocol
+- ✅ Terminal type negotiation
+- ✅ Window size negotiation (NAWS)
+- ✅ Character-at-a-time mode support
+
+### SSH (Port 2222)
+Modern secure transport with advanced features.
+- ✅ Public Key Authentication
+- ✅ Password Authentication (mapped to character login)
+- ✅ Automated Key Registration (first login with key)
+- ✅ **Visual Fingerprints**: Uses `fingerart` (drunken bishop) for key verification
+- ✅ **Interactive Readline**: Built-in line editing, history, and ANSI support
+
+### WebSocket (Port 4444)
+Modern web-based client access.
+- ✅ **High Performance**: Powered by Bandit and WebSock.
+- ✅ **Standard Subprotocols**: Supports `plain.mudstandards.org`.
+- ✅ **Bi-directional**: Full support for all MOO commands and output.
 
 ## Examples
 
-### Telnet Only (Default)
+### Telnet Only
 ```elixir
-config :alchemoo,
-  network: %{
-    telnet: %{enabled: true, port: 7777},
-    ssh: %{enabled: false},
-    websocket: %{enabled: false}
-  }
+config :alchemoo, :network,
+  telnet: %{enabled: true, port: 7777},
+  ssh: %{enabled: false},
+  websocket: %{enabled: false}
 ```
 
-### Telnet + SSH
+### SSH Only (Secure Mode)
 ```elixir
-config :alchemoo,
-  network: %{
-    telnet: %{enabled: true, port: 7777},
-    ssh: %{enabled: true, port: 2222},
-    websocket: %{enabled: false}
-  }
-```
-
-### Custom Ports
-```elixir
-config :alchemoo,
-  network: %{
-    telnet: %{enabled: true, port: 8888},
-    ssh: %{enabled: true, port: 9999},
-    websocket: %{enabled: false}
-  }
-```
-
-### SSH Only (No Telnet)
-```elixir
-config :alchemoo,
-  network: %{
-    telnet: %{enabled: false},
-    ssh: %{
-      enabled: true, 
-      port: 2222,
-      show_fingerprint: true  # Uses fingerart for drunken bishop display
-    },
-    websocket: %{enabled: false}
-  }
-```
-
-### All Protocols
-```elixir
-config :alchemoo,
-  network: %{
-    telnet: %{enabled: true, port: 7777},
-    ssh: %{enabled: true, port: 2222},
-    websocket: %{enabled: true, port: 4000}
-  }
-```
-
-## Environment Variables (Future)
-
-```elixir
-# config/runtime.exs
-import Config
-
-if config_env() == :prod do
-  config :alchemoo,
-    network: %{
-      telnet: %{
-        enabled: System.get_env("ALCHEMOO_TELNET_ENABLED", "true") == "true",
-        port: String.to_integer(System.get_env("ALCHEMOO_TELNET_PORT", "7777"))
-      },
-      ssh: %{
-        enabled: System.get_env("ALCHEMOO_SSH_ENABLED", "false") == "true",
-        port: String.to_integer(System.get_env("ALCHEMOO_SSH_PORT", "2222"))
-      }
-    }
-end
+config :alchemoo, :network,
+  telnet: %{enabled: false},
+  ssh: %{enabled: true, port: 2222},
+  websocket: %{enabled: false}
 ```
 
 ## Checking Active Listeners
 
+You can inspect active listeners from IEx:
+
 ```elixir
-# In IEx
 iex> Alchemoo.Network.Supervisor.listeners()
 [
-  %{id: Alchemoo.Network.Telnet, pid: #PID<0.123.0>, active: true}
+  {Alchemoo.Network.Telnet, #PID<0.123.0>},
+  {Alchemoo.Network.SSH, #PID<0.124.0>}
 ]
-
-iex> Alchemoo.Network.Telnet.info()
-%{ip: "0.0.0.0", port: 7777, connections: 2}
 ```
 
-## Implementation Status
+## Implementation Details
 
-- ✅ Telnet (implemented)
-- ⏳ SSH (placeholder ready, needs implementation)
-  - Will use `fingerart` package for drunken bishop fingerprint display
-  - See `lib/alchemoo/network/ssh.ex` for implementation notes
-- ⏳ WebSocket (not yet implemented)
+### SSH Fingerprints
+Alchemoo uses the `fingerart` library to generate "Drunken Bishop" visualizations of SSH public keys. This allows users to easily verify their keys visually:
 
-## Dependencies
+```
++--[RSA 4096]----+
+|      .oo.       |
+|      .o.o       |
+|     .  o o      |
+|      .. o .     |
+|     .  S .      |
+|    . .  .       |
+|     . .         |
+|      .          |
+|                 |
++----[SHA256]-----+
+```
 
-- **Telnet**: `:ranch` (included)
-- **SSH**: `:ssh` (built-in Erlang) + `:fingerart` (optional, for fingerprint display)
-- **WebSocket**: TBD (likely Phoenix.Socket or Cowboy)
+### Unified Connection Handler
+Regardless of the transport (Telnet or SSH), all connections are handled by `Alchemoo.Connection.Handler`. This ensures consistent command parsing, verb execution, and output handling across all protocols.
 
-## Notes
+---
 
-- Each listener runs independently
-- Listeners can be enabled/disabled without affecting others
-- Port conflicts will cause startup failure (by design)
-- All listeners share the same Connection.Supervisor
+**This documentation is up to date as of March 1, 2026.**

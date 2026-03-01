@@ -2,7 +2,7 @@
 
 A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM VM.
 
-**Version:** 0.6.3  
+**Version:** 0.7.0  
 
 ## Features
 
@@ -164,7 +164,7 @@ elixir examples/task_demo.exs
 - [x] Object matching in commands
 - [x] Preposition validation
 - [ ] Performance optimization
-- [ ] WebSocket support
+- [x] WebSocket support
 - [ ] Implement remaining network stubs (listen/unlisten)
 
 ## License

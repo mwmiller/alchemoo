@@ -11,7 +11,7 @@ This guide will help you get Alchemoo up and running in minutes.
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/alchemoo.git
+git clone https://github.com/mwmiller/alchemoo.git
 cd alchemoo
 
 # Install dependencies
@@ -23,7 +23,7 @@ mix compile
 
 ## Getting a MOO Database
 
-Alchemoo works best with an existing MOO database. Here are some options:
+Alchemoo works best with an existing MOO database. By default, it includes a fixture for testing, but for a real world, you should get a standard core.
 
 ### LambdaCore (Recommended for beginners)
 
@@ -36,16 +36,6 @@ mkdir -p "$STATE_HOME/alchemoo"
 # Download LambdaCore
 curl -o "$STATE_HOME/alchemoo/LambdaCore-12Apr99.db" \
   https://github.com/SevenEcks/LambdaMOO/raw/master/LambdaCore-12Apr99.db
-```
-
-### JHCore (More features)
-
-JHCore is a more modern MOO database with additional features:
-
-```bash
-# Download JHCore
-curl -o "$STATE_HOME/alchemoo/JHCore-DEV-2.db" \
-  https://github.com/SevenEcks/lambda-moo-programming/raw/master/databases/JHCore-DEV-2.db
 ```
 
 ## Starting the Server
@@ -61,26 +51,29 @@ iex -S mix
 You should see output like:
 
 ```
-[info] Database loaded: 95 objects, 1699 verbs
-[info] Checkpoint server started
+[info] Startup database loaded from test/fixtures/lambdacore.db (95 objects)
+[info] Checkpoint server started (dir: /Users/matt/.local/state/alchemoo/checkpoints, ...)
 [info] Telnet server listening on port 7777
+[info] SSH server listening on port 2222
 ```
 
 ## Connecting to the Server
 
-Open a new terminal and connect via Telnet:
+### Via Telnet (Classic)
 
 ```bash
 telnet localhost 7777
 ```
 
-You should see a welcome message and a prompt:
+### Via SSH (Modern & Secure)
 
+Alchemoo features a full SSH implementation with public key support and interactive readline.
+
+```bash
+ssh localhost -p 2222
 ```
-Welcome to Alchemoo!
-Connected as Wizard (#2)
-> 
-```
+
+On your first connection with a public key, Alchemoo will offer to register your key to your character.
 
 ## Your First Commands
 
@@ -102,169 +95,32 @@ Tasks: 0
 Goodbye!
 ```
 
-## Understanding the System
-
-### Objects
-
-Everything in a MOO is an object. Objects have:
-- **Properties** - Data stored on the object
-- **Verbs** - Code that can be executed
-- **Parent** - Inheritance relationship
-- **Location** - Where the object is
-
-### Verbs
-
-Verbs are pieces of MOO code attached to objects. When you type a command, Alchemoo:
-
-1. Parses the command
-2. Finds the matching verb
-3. Executes the verb code
-4. Sends output back to you
-
-### Tasks
-
-Each command spawns a task that executes the verb code. Tasks have:
-- **Tick quota** - Maximum operations (default: 10,000)
-- **Context** - player, this, caller
-- **Environment** - Variables like verb, args, dobj, etc.
-
 ## Configuration
 
-Alchemoo uses sensible defaults, but you can customize:
-
-### Checkpoint Settings
-
-```elixir
-# config/config.exs
-config :alchemoo, :base_dir, Path.join(System.get_env("XDG_STATE_HOME") || Path.join(System.user_home!(), ".local/state"), "alchemoo")
-
-config :alchemoo, :checkpoint,
-  interval: 300_000,  # 5 minutes
-  keep_last: 5
-```
+Alchemoo uses `config/config.exs` for all settings:
 
 ### Network Settings
 
 ```elixir
 config :alchemoo, :network,
   telnet: %{enabled: true, port: 7777},
-  ssh: %{enabled: false, port: 2222}
+  ssh: %{enabled: true, port: 2222}
 ```
 
-### Task Limits
+### Checkpoint Settings
 
 ```elixir
-config :alchemoo, :default_tick_quota, 10_000
-config :alchemoo, :max_tasks_per_player, 10
-```
-
-## Development Workflow
-
-### Running Tests
-
-```bash
-# Run all tests
-mix test
-
-# Run specific test file
-mix test test/alchemoo/command/parser_test.exs
-
-# Run tests with coverage
-mix test --cover
-```
-
-### Running Demos
-
-```bash
-# Database demo
-elixir examples/database_server_demo.exs
-
-# Task demo
-elixir examples/task_demo.exs
-
-# Command demo
-elixir examples/command_demo.exs
-```
-
-### Debugging
-
-Start the server with IEx for interactive debugging:
-
-```elixir
-# Start server
-iex -S mix
-
-# Check database stats
-Alchemoo.Database.Server.stats()
-
-# List running tasks
-Alchemoo.TaskSupervisor.list_tasks()
-
-# Get object
-Alchemoo.Database.Server.get_object(2)
-```
-
-## Common Issues
-
-### Port Already in Use
-
-If port 7777 is already in use:
-
-```elixir
-# config/config.exs
-config :alchemoo, :network,
-  telnet: %{enabled: true, port: 8888}
-```
-
-### Database Not Loading
-
-Make sure your database file is in the correct location:
-
-```bash
-# Check if file exists
-STATE_HOME="${XDG_STATE_HOME:-$HOME/.local/state}"
-ls -lh "$STATE_HOME/alchemoo"/*.db
-
-# Check file format
-head -1 "$STATE_HOME/alchemoo/LambdaCore-12Apr99.db"
-# Should show: ** LambdaMOO Database, Format Version 4 **
-```
-
-### Connection Refused
-
-Make sure the server is running:
-
-```bash
-# Check if server is listening
-lsof -i :7777
-
-# Or use netstat
-netstat -an | grep 7777
+config :alchemoo, :checkpoint,
+  interval: 307_000,  # 5 minutes (prime)
+  keep_last: 23
 ```
 
 ## Next Steps
 
-Now that you have Alchemoo running:
-
 1. **Explore the database** - Use `@stats`, `@who`, and other commands
 2. **Read the documentation** - Check out [docs/](docs/)
 3. **Write MOO code** - Create verbs and properties
-4. **Contribute** - Submit issues and pull requests!
 
-## Resources
+---
 
-- [Commands Documentation](commands.md)
-- [Built-in Functions](builtins-status.md)
-- [Task System](tasks.md)
-- [Checkpoint System](checkpoint.md)
-- [Unicode Support](unicode.md)
-
-## Getting Help
-
-- **GitHub Issues** - Report bugs and request features
-- **Discussions** - Ask questions and share ideas
-- **Discord** - Join our community (coming soon!)
-
-## License
-
-MIT - See LICENSE file for details
+**This documentation is up to date as of March 1, 2026.**

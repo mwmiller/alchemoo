@@ -7,9 +7,9 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 ## Status: Multi-Transport MOO Server
 
 **Commits:** 110+  
-**Current branch tests (Feb 28, 2026):** 165 tests, 0 failures  
-**Lines of Code:** ~9,500  
-**Version:** 0.6.1 (Interactive SSH & Core Fixes)
+**Current branch tests (March 1, 2026):** 163 tests, 0 failures  
+**Lines of Code:** ~10,000  
+**Version:** 0.7.0 (Multi-Transport Support)
 
 ## What Works
 
@@ -19,14 +19,16 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 - ✅ Database server with ETS storage
 - ✅ Task system with tick quotas and process isolation
 - ✅ Unified Connection handling (transport-agnostic)
-- ✅ Network layer (Telnet on 7777, SSH on 2222)
+- ✅ Network layer (Telnet on 7777, SSH on 2222, **WebSocket on 4444**)
 - ✅ **SSH Readline**: Stateful line editing with ANSI support and history.
 - ✅ Checkpoint system with auto-recovery (prime intervals)
 - ✅ MOO database export (Format 4)
-- ✅ Command parsing and execution - **Fixed dobj/iobj resolution**
+- ✅ Command parsing and execution - **Robust multi-word preposition matching**
 - ✅ Registry-based task tracking
 - ✅ Inheritance-aware verb binding
 - ✅ Command shorthands (", :, ;)
+- ✅ **Synchronous Commands**: Refactored `#0:do_command` with fallback.
+- ✅ **Permission System**: MOO-compatible checks for objects, properties, and verbs.
 
 ### Built-in Functions (100%+)
 - ✅ **144 implemented**
@@ -46,12 +48,14 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 - ✅ **Full Unicode**: UTF-8 support throughout with grapheme-aware string operations.
 - ✅ **Reliable Checkpoints**: 23 rotating checkpoints and exports maintained.
 - ✅ **Session Takeover**: Modern handling of multiple logins and session redirection.
+- ✅ WebSocket Support**: Modern web-based client access on port 4444.
+
 
 ## Architecture
 
 ### Process Model
 ```
-User (Telnet/SSH) → Transport Bridge → Connection.Handler (GenServer)
+User (Telnet/SSH/WS) → Transport Bridge → Connection.Handler (GenServer)
                                               ↓
                                          TaskSupervisor → Task (GenServer)
                                               ↓
@@ -63,11 +67,9 @@ User (Telnet/SSH) → Transport Bridge → Connection.Handler (GenServer)
 ## Next Steps
 
 ### Priorities (Phase 4)
-1.  **Preposition Validation**: Implement full preposition matching in the command parser.
-2.  **WebSocket Support**: Modern web-based client access.
-3.  **Performance**: Optimize hot paths in the interpreter and database lookups.
-4.  **Network Stubs**: Fully implement `listen`, `unlisten`, and `open_network_connection`.
+1.  **Performance**: Optimize hot paths in the interpreter and database lookups.
+2.  **Network Stubs**: Fully implement `listen`, `unlisten`, and `open_network_connection`.
 
 ---
 
-**This summary is current as of Feb 27, 2026.**
+**This summary is current as of March 1, 2026.**

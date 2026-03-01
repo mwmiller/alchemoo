@@ -16,13 +16,19 @@
 - **Expressions**: All arithmetic, logical, and comparison operators
 - **Tick Quotas**: Accurate tick counting and enforcement
 - **Isolation**: Crashes are isolated to individual task processes
+- **Security**: MOO-compatible permission checks for objects, properties, and verbs
 
 ### Network Layer (100%)
 - **Unified Handlers**: Transport-agnostic logic for all connections
 - **Telnet**: Ranch-based high-performance TCP listener
 - **SSH**: Full SSH support with public key and password auth
+- **WebSocket**: Full WebSocket support via Bandit and WebSock on port 4444
 - **Key Management**: Automated registration and visual 'fingerart' identification
 - **Session Management**: Redirection and robust logout teardown
+
+### Command Execution (100%)
+- **Preposition Validation**: Full multi-word preposition matching in command parser
+- **Synchronous Commands**: Native support for `#0:do_command` with Elixir-to-MOO bridging
 
 ### Built-in Functions (100%+)
 - **Standard**: All 140 standard MOO built-ins implemented
@@ -38,19 +44,17 @@
 
 ## 🚧 Current Goals (Phase 4)
 
-- [ ] **Preposition Validation**: Implement full preposition matching in command parser
-- [ ] **WebSocket Support**: Modern client access
 - [ ] **Performance**: Optimize interpreter hot paths
 - [ ] **Network Stubs**: Implement `listen`, `unlisten`, `open_network_connection`
 
 ## 📈 Progress Metrics
 
-- **Lines of Code**: ~9,500
-- **Modules**: 42
+- **Lines of Code**: ~10,000
+- **Modules**: 43
 - **Commits**: 110+
-- **Version**: 0.6.1
-- **Completion**: ~99% of core MOO functionality
+- **Version**: 0.7.0
+- **Completion**: ~99.5% of core MOO functionality
 
 ---
 
-**This documentation is up to date as of Feb 28, 2026.**
+**This documentation is up to date as of March 1, 2026.**
