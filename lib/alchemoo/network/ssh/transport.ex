@@ -15,9 +15,9 @@ defmodule Alchemoo.Network.SSH.Transport do
   end
 
   def peername({connection_handler, _channel_id}) do
-    # Peername of the connection, not the channel
-    case :ssh.connection_info(connection_handler, [:peer]) do
-      [peer: {ip, port}] -> {:ok, {ip, port}}
+    # Get the underlying socket and use :inet.peername for reliability
+    case :ssh.connection_info(connection_handler, [:socket]) do
+      [socket: socket] -> :inet.peername(socket)
       _ -> {:error, :unknown}
     end
   end

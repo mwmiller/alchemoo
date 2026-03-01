@@ -107,7 +107,6 @@ defmodule Alchemoo.Connection.Handler do
   defp resolve_peer_info(socket, transport, _initial_peer) do
     case transport && transport.peername(socket) do
       {:ok, {ip, _port}} ->
-        Logger.info("Resolving peer info for IP: #{inspect(ip)}")
         reverse_dns(ip)
 
       other ->
@@ -119,7 +118,7 @@ defmodule Alchemoo.Connection.Handler do
     end
   end
 
-  defp reverse_dns(ip) do
+  defp reverse_dns(ip) when is_tuple(ip) do
     case :inet_res.gethostbyaddr(ip) do
       {:ok, {:hostent, name, _, _, _, _}} ->
         to_string(name)
@@ -133,7 +132,9 @@ defmodule Alchemoo.Connection.Handler do
       ip_to_string(ip)
   end
 
-  defp ip_to_string(ip) do
+  defp reverse_dns(_ip), do: "0.0.0.0"
+
+  defp ip_to_string(ip) when is_tuple(ip) do
     case :inet.ntoa(ip) do
       {:error, _} ->
         Logger.info("inet.ntoa failed for #{inspect(ip)}")
@@ -147,6 +148,8 @@ defmodule Alchemoo.Connection.Handler do
       Logger.info("ip_to_string crash for #{inspect(ip)}: #{inspect(e)}")
       "0.0.0.0"
   end
+
+  defp ip_to_string(_ip), do: "0.0.0.0"
 
   defp initial_options(_transport) do
     # Telnet clients typically do local echo (client-echo 1)
