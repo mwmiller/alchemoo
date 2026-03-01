@@ -106,8 +106,15 @@ defmodule Alchemoo.Connection.Handler do
 
   defp resolve_peer_info(socket, transport, _initial_peer) do
     case transport && transport.peername(socket) do
-      {:ok, {ip, _port}} -> reverse_dns(ip)
-      _ -> "unknown"
+      {:ok, {ip, _port}} ->
+        reverse_dns(ip)
+
+      other ->
+        Logger.debug(
+          "Peer resolution failed: transport=#{inspect(transport)} result=#{inspect(other)}"
+        )
+
+        "unknown"
     end
   end
 
