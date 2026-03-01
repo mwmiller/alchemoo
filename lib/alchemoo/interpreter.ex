@@ -643,6 +643,9 @@ defmodule Alchemoo.Interpreter do
 
       expr ->
         case eval(expr, env) do
+          {:ok, {:err, :ANY}, _} ->
+            true
+
           {:ok, :ANY, _} ->
             true
 
@@ -784,18 +787,16 @@ defmodule Alchemoo.Interpreter do
   defp should_catch?(_err, nil, _env), do: true
 
   defp should_catch?(err, codes_expr, env) do
-    case eval(codes_expr, env) do
-      {:ok, :ANY, _} ->
-        true
-
-      {:ok, {:list, items}, _} ->
-        Enum.any?(items, &Value.equal?(&1, err))
-
-      {:ok, item, _} ->
-        Value.equal?(item, err)
-
+    case codes_expr do
+      :ANY -> true
       _ ->
-        false
+        case eval(codes_expr, env) do
+          {:ok, :ANY, _} -> true
+          {:ok, {:err, :ANY}, _} -> true
+          {:ok, {:list, items}, _} -> Enum.any?(items, &Value.equal?(&1, err))
+          {:ok, item, _} -> Value.equal?(item, err)
+          _ -> false
+        end
     end
   end
 

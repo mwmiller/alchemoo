@@ -11,8 +11,10 @@
 
 ### MOO Interpreter (100%)
 - **Language**: Full AST-based interpreter
+- **Parser**: Robust recursive descent parser with iterative precedence climbing
+- **Complexity**: Handles deeply nested structures and complex expressions (e.g. `if (caller != #0)`)
 - **Types**: INT, OBJ, STR, ERR, LIST, FLOAT
-- **Control Flow**: `if/else`, `while`, `for`, `try/except`, `try/finally`, `switch`, `return`
+- **Control Flow**: `if/elseif/else`, `while`, `for` (list/range), `try/except/finally`, `break/continue`
 - **Expressions**: All arithmetic, logical, and comparison operators
 - **Tick Quotas**: Accurate tick counting and enforcement
 - **Isolation**: Crashes are isolated to individual task processes
