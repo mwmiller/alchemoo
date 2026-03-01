@@ -8,8 +8,6 @@ defmodule Alchemoo.Network.SSH.Handler do
   alias Alchemoo.Connection.Supervisor, as: ConnSup
   alias Alchemoo.Network.SSH.Transport, as: SSHTransport
 
-  alias Alchemoo.Network.Readline
-
   @behaviour :ssh_server_channel
 
   @impl :ssh_server_channel
@@ -19,31 +17,19 @@ defmodule Alchemoo.Network.SSH.Handler do
        channel_id: nil,
        connection_handler: nil,
        handler_pid: nil,
-       user: nil,
-       readline_state: nil
+       user: nil
      }}
   end
 
   @impl :ssh_server_channel
-  def handle_ssh_msg({:ssh_cm, cm, {:data, channel_id, _type, data}}, state) do
+  def handle_ssh_msg({:ssh_cm, _cm, {:data, _channel_id, _type, data}}, state) do
     if trace_ssh?(), do: Logger.debug("SSH Channel received data: #{inspect(data)}")
 
-    readline_state = state.readline_state || Readline.new({cm, channel_id}, SSHTransport)
-
-    case Readline.handle_input(data, readline_state) do
-      {:ok, next_state} ->
-        {:ok, %{state | readline_state: next_state}}
-
-      {:line, line, next_state} ->
-        if state.handler_pid do
-          # Connection.Handler expects lines WITH newlines for its line-buffering,
-          # but we've already stripped them and handled echoing.
-          # We send it as a complete line.
-          send(state.handler_pid, {:network_input, line <> "\n"})
-        end
-
-        {:ok, %{state | readline_state: next_state}}
+    if state.handler_pid do
+      send(state.handler_pid, {:network_input, data})
     end
+
+    {:ok, state}
   end
 
   def handle_ssh_msg({:ssh_cm, cm, {:shell, channel_id, want_reply}}, state) do

@@ -113,16 +113,23 @@ defmodule Alchemoo.Connection.Handler do
 
   defp reverse_dns(ip) do
     case :inet_res.gethostbyaddr(ip) do
-      {:ok, {:hostent, name, _, _, _, _}} -> to_string(name)
-      _ -> ip_to_string(ip)
+      {:ok, {:hostent, name, _, _, _, _}} ->
+        to_string(name)
+
+      _ ->
+        ip_to_string(ip)
     end
+  rescue
+    _ -> ip_to_string(ip)
   end
 
   defp ip_to_string(ip) do
     case :inet.ntoa(ip) do
       {:error, _} -> "unknown"
-      address -> to_string(address)
+      address -> List.to_string(address)
     end
+  rescue
+    _ -> "unknown"
   end
 
   defp initial_options(_transport) do
