@@ -581,6 +581,10 @@ defmodule Alchemoo.Connection.Handler do
       |> String.replace("\r", "\n")
       |> String.replace("\n", "\r\n")
 
+    if Application.get_env(:alchemoo, :trace_output, false) do
+      Logger.debug("Network Send (raw): #{inspect(normalized_text)}")
+    end
+
     conn.transport.send(conn.socket, normalized_text)
   rescue
     _ ->

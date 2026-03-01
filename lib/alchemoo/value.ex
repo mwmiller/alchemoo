@@ -282,7 +282,7 @@ defmodule Alchemoo.Value do
   def to_string({:num, n}), do: Integer.to_string(n)
   def to_string({:float, n}), do: :erlang.float_to_binary(n, [:compact, decimals: 1])
   def to_string({:obj, n}), do: "##{n}"
-  def to_string({:str, s}), do: s
+  def to_string({:str, s}) when is_binary(s), do: s
   def to_string({:err, e}), do: Atom.to_string(e)
   def to_string({:list, _}), do: "{list}"
   def to_string(:clear), do: ""
