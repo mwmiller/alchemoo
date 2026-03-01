@@ -66,15 +66,46 @@ defmodule Alchemoo.Command.Executor do
       this: player_id,
       caller: player_id,
       handler_pid: handler_pid,
-      verb_name: "eval"
+      verb_name: "eval",
+      sync_caller: self()
     ]
 
-    # Prefix with 'return' if not a statement
+    # Reference behavior from LambdaMOO server.c:
+    # If it starts with ;; it's a long-form/multi-line (no return prefix)
+    # If it starts with ; it's an expression (add return prefix)
+    trimmed = String.trim(code)
+
     code =
-      if String.starts_with?(String.trim(code), ";"), do: code, else: "return " <> code <> ";"
+      if String.starts_with?(trimmed, ";") do
+        # ;; code -> run as is
+        String.slice(trimmed, 1..-1//1)
+      else
+        # ; code -> return code;
+        "return " <> trimmed <> ";"
+      end
 
     case TaskSupervisor.spawn_task(code, env, task_opts) do
       {:ok, pid} ->
+        # For shorthand eval, we want to see the result.
+        # We spawned it with sync_caller: self(), so we can wait for completion.
+        spawn(fn ->
+          ref = Process.monitor(pid)
+
+          receive do
+            {:task_complete, result} ->
+              Handler.send_output(handler_pid, "=> #{Value.to_literal(result)}\n")
+
+            {:task_error, reason} ->
+              Handler.send_output(handler_pid, "=> ERROR: #{inspect(reason)}\n")
+
+            {:DOWN, ^ref, :process, _pid, _reason} ->
+              :ok
+          after
+            30_000 ->
+              :ok
+          end
+        end)
+
         {:ok, pid}
 
       {:error, reason} ->

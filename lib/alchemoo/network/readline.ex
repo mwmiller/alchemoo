@@ -1,4 +1,4 @@
-defmodule Alchemoo.Network.SSH.Readline do
+defmodule Alchemoo.Network.Readline do
   @moduledoc """
   Implements server-side line editing (Readline-like) for SSH connections.
   Handles ANSI escape sequences, backspace, and history.

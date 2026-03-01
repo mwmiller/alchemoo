@@ -8,7 +8,7 @@ defmodule Alchemoo.Network.SSH.Handler do
   alias Alchemoo.Connection.Supervisor, as: ConnSup
   alias Alchemoo.Network.SSH.Transport, as: SSHTransport
 
-  alias Alchemoo.Network.SSH.Readline
+  alias Alchemoo.Network.Readline
 
   @behaviour :ssh_server_channel
 

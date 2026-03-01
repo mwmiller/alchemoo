@@ -8,6 +8,7 @@ defmodule Alchemoo.Connection.Handler do
 
   alias Alchemoo.Command.Executor
   alias Alchemoo.Database.Server, as: DB
+  alias Alchemoo.Network.Readline
   alias Alchemoo.Runtime
   alias Alchemoo.Task, as: MOOTask
   alias Alchemoo.TaskSupervisor
@@ -21,6 +22,7 @@ defmodule Alchemoo.Connection.Handler do
     :player_id,
     :connected_at,
     :last_activity,
+    :readline_state,
     input_buffer: "",
     output_queue: [],
     output_delimiters: ["", ""],
@@ -78,6 +80,13 @@ defmodule Alchemoo.Connection.Handler do
 
     peer_info = resolve_peer_info(socket, transport, Keyword.get(opts, :peer_info))
     conn_id = player_id_opt || -(1000 + :erlang.phash2(make_ref()))
+
+    # If Telnet (ranch_tcp), negotiate options for Readline
+    if transport == :ranch_tcp do
+      # IAC WILL ECHO (255, 251, 1)
+      # IAC WILL SGA (255, 251, 3)
+      transport.send(socket, <<255, 251, 1, 255, 251, 3>>)
+    end
 
     conn = %__MODULE__{
       socket: socket,
@@ -321,16 +330,25 @@ defmodule Alchemoo.Connection.Handler do
   defp handle_input_data(conn, data) do
     conn = %{conn | last_activity: System.system_time(:second)}
 
-    # Server-side echo: if client-echo is 0 (MOO semantics: server echoes), we echo back characters.
-    # Note: LambdaMOO 'client-echo' option: 0 means server echoes, 1 means client echoes.
-    if Map.get(conn.connection_options, "client-echo") == 0 do
-      send_text(conn, data)
-    end
+    # Process Telnet commands first if any
+    {clean_data, conn} = process_telnet_commands(data, conn)
 
-    new_buffer = conn.input_buffer <> data
-    {lines, remaining} = extract_lines(new_buffer)
-    new_conn = Enum.reduce(lines, conn, &process_input(&2, &1))
-    {:noreply, %{new_conn | input_buffer: remaining}}
+    if clean_data == "" do
+      {:noreply, conn}
+    else
+      # Use Readline for line editing if available
+      # (SSH always has it, Telnet has it if we negotiated WILL ECHO/SGA)
+      readline_state = conn.readline_state || Readline.new(conn.socket, conn.transport)
+
+      case Readline.handle_input(clean_data, readline_state) do
+        {:ok, next_state} ->
+          {:noreply, %{conn | readline_state: next_state}}
+
+        {:line, line, next_state} ->
+          new_conn = process_input(%{conn | readline_state: next_state}, line)
+          {:noreply, new_conn}
+      end
+    end
   end
 
   defp handle_network_closed(conn, _reason) do
@@ -570,15 +588,6 @@ defmodule Alchemoo.Connection.Handler do
       {:error, :transport_failed}
   end
 
-  defp extract_lines(buffer) do
-    lines = String.split(buffer, ["\n", "\r\n", "\r"], trim: true)
-
-    if String.ends_with?(buffer, ["\n", "\r\n", "\r"]),
-      do: {lines, ""},
-      else:
-        if(lines == [], do: {[], buffer}, else: {Enum.slice(lines, 0..-2//1), List.last(lines)})
-  end
-
   defp process_buffered_input(conn) do
     # For now, just continue - the next handle_info({:tcp, ...}) will handle it
     # OR if we have lines in buffer, we should trigger process_input
@@ -648,6 +657,41 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   defp login_parse_fell_back?(_input_args, _parse), do: false
+
+  defp process_telnet_commands(<<>>, conn), do: {"", conn}
+
+  defp process_telnet_commands(<<255, cmd, opt, rest::binary>>, conn)
+       when cmd in [251, 252, 253, 254] do
+    # Handle DO/DONT/WILL/WONT
+    new_conn = handle_telnet_option(conn, cmd, opt)
+    process_telnet_commands(rest, new_conn)
+  end
+
+  defp process_telnet_commands(<<255, _cmd, rest::binary>>, conn) do
+    # Handle other IAC (like IAC IAC for literal 255)
+    process_telnet_commands(rest, conn)
+  end
+
+  defp process_telnet_commands(<<byte, rest::binary>>, conn) do
+    {others, next_conn} = process_telnet_commands(rest, conn)
+    {<<byte>> <> others, next_conn}
+  end
+
+  defp handle_telnet_option(conn, cmd, opt) do
+    case {cmd, opt} do
+      {253, 1} ->
+        # Client says DO ECHO (meaning I should echo)
+        # Confirmation for WILL ECHO
+        put_in(conn.connection_options["client-echo"], 0)
+
+      {253, 3} ->
+        # Confirmation for WILL SGA
+        conn
+
+      _ ->
+        conn
+    end
+  end
 
   defp trace_connections?, do: Application.get_env(:alchemoo, :trace_connections, false)
 end
