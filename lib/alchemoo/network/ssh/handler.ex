@@ -142,7 +142,6 @@ defmodule Alchemoo.Network.SSH.Handler do
 
     ConnSup.start_connection(socket, SSHTransport,
       player_id: player_id,
-      peer_info: "ssh:#{state.user}",
       initial_message: initial_message
     )
   end

@@ -41,10 +41,10 @@ config :alchemoo,
   trace_builtins: false,
   trace_connections: false,
   trace_ssh: false,
-  trace_runtime_verbs: true,
-  trace_runtime_properties: true,
+  trace_runtime_verbs: false,
+  trace_runtime_properties: false,
   trace_tasks: false,
-  trace_output: true,
+  trace_output: false,
   trace_interpreter_eval: false,
   trace_interpreter_statements: false
 

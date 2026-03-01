@@ -104,16 +104,24 @@ defmodule Alchemoo.Connection.Handler do
     {:ok, conn, {:continue, :initial_login}}
   end
 
-  defp resolve_peer_info(socket, transport, initial_peer) do
+  defp resolve_peer_info(socket, transport, _initial_peer) do
     case transport && transport.peername(socket) do
-      {:ok, {ip, port}} ->
-        case :inet.ntoa(ip) do
-          {:error, _} -> initial_peer || "unknown"
-          address -> "#{address}:#{port}"
-        end
+      {:ok, {ip, _port}} -> reverse_dns(ip)
+      _ -> "unknown"
+    end
+  end
 
-      _ ->
-        initial_peer || "unknown"
+  defp reverse_dns(ip) do
+    case :inet_res.gethostbyaddr(ip) do
+      {:ok, {:hostent, name, _, _, _, _}} -> to_string(name)
+      _ -> ip_to_string(ip)
+    end
+  end
+
+  defp ip_to_string(ip) do
+    case :inet.ntoa(ip) do
+      {:error, _} -> "unknown"
+      address -> to_string(address)
     end
   end
 
