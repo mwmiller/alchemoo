@@ -9,7 +9,7 @@ defmodule Alchemoo.Network.Supervisor do
     Application.get_env(:alchemoo, :network, %{
       telnet: %{enabled: true, port: 7777},
       ssh: %{enabled: false, port: 2222},
-      websocket: %{enabled: false, port: 4000}
+      websocket: %{enabled: false, port: 4444}
     })
   end
 
@@ -48,10 +48,8 @@ defmodule Alchemoo.Network.Supervisor do
   defp resolve_port(port) when is_function(port), do: port.()
   defp resolve_port(port), do: port
 
-  defp maybe_add_websocket(children, %{enabled: true, port: _port}) do
-    # WebSocket not implemented yet
-    # children ++ [{Alchemoo.Network.WebSocket, port: port}]
-    children
+  defp maybe_add_websocket(children, %{enabled: true, port: port}) do
+    children ++ [{Alchemoo.Network.WebSocket, port: resolve_port(port)}]
   end
 
   defp maybe_add_websocket(children, _), do: children

@@ -25,4 +25,9 @@ defmodule Alchemoo.Network.SSH.Transport do
   # Helper to set opts? SSH doesn't use the same :active opts.
   def setopts(_socket, _opts), do: :ok
   def controlling_process(_socket, _pid), do: :ok
+
+  def use_readline?, do: true
+  def default_echo?, do: true
+
+  def preprocess(data, conn), do: {data, conn}
 end

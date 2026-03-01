@@ -33,4 +33,17 @@ config :alchemoo, :network,
 
       20_003 + rem(seed, 9973)
     end
+  },
+  websocket: %{
+    enabled: true,
+    port: fn ->
+      seed =
+        case Code.ensure_loaded?(ExUnit) && ExUnit.configuration()[:seed] do
+          nil -> :erlang.phash2(make_ref(), 10_000)
+          0 -> :erlang.phash2(make_ref(), 10_000)
+          val -> val
+        end
+
+      30_011 + rem(seed, 9973)
+    end
   }

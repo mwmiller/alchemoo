@@ -81,8 +81,8 @@ defmodule Alchemoo.Connection.Handler do
     peer_info = resolve_peer_info(socket, transport, Keyword.get(opts, :peer_info))
     conn_id = player_id_opt || -(1000 + :erlang.phash2(make_ref()))
 
-    # If Telnet (ranch_tcp), negotiate options for Readline
-    if transport == :ranch_tcp do
+    # If Telnet, negotiate options for Readline
+    if transport == Alchemoo.Network.Telnet.Transport do
       # IAC WILL ECHO (255, 251, 1)
       # IAC WILL SGA (255, 251, 3)
       transport.send(socket, <<255, 251, 1, 255, 251, 3>>)
@@ -362,30 +362,38 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   defp handle_input_data(conn, data) do
+    if Application.get_env(:alchemoo, :trace_input, false) do
+      Logger.debug("Network Input (raw): #{inspect(data)}")
+    end
+
     conn = %{conn | last_activity: System.system_time(:second)}
 
-    # Process Telnet commands first if any
-    {clean_data, conn} = process_telnet_commands(data, conn)
+    # Standardized preprocessing (Telnet IAC, etc.)
+    {clean_data, conn} = conn.transport.preprocess(data, conn)
 
-    if clean_data == "" do
-      {:noreply, conn}
-    else
-      # Use Readline for line editing if available
-      # (SSH always has it, Telnet has it if we negotiated WILL ECHO/SGA)
-      # We force echo to true for now to ensure usability while using our Readline editor.
-      echo? = true
+    if conn.transport.use_readline?() do
+      if clean_data == "" do
+        {:noreply, conn}
+      else
+        # Use Readline for line editing
+        echo? = conn.transport.default_echo?()
 
-      readline_state =
-        conn.readline_state || Readline.new(conn.socket, conn.transport, echo: echo?)
+        readline_state =
+          conn.readline_state || Readline.new(conn.socket, conn.transport, echo: echo?)
 
-      case Readline.handle_input(clean_data, %{readline_state | echo: echo?}) do
-        {:ok, next_state} ->
-          {:noreply, %{conn | readline_state: next_state}}
+        case Readline.handle_input(clean_data, %{readline_state | echo: echo?}) do
+          {:ok, next_state} ->
+            {:noreply, %{conn | readline_state: next_state}}
 
-        {:line, line, next_state} ->
-          new_conn = process_input(%{conn | readline_state: next_state}, line)
-          {:noreply, new_conn}
+          {:line, line, next_state} ->
+            new_conn = process_input(%{conn | readline_state: next_state}, line)
+            {:noreply, new_conn}
+        end
       end
+    else
+      # Direct input fallback
+      new_conn = process_input(conn, clean_data)
+      {:noreply, new_conn}
     end
   end
 
@@ -699,41 +707,6 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   defp login_parse_fell_back?(_input_args, _parse), do: false
-
-  defp process_telnet_commands(<<>>, conn), do: {"", conn}
-
-  defp process_telnet_commands(<<255, cmd, opt, rest::binary>>, conn)
-       when cmd in [251, 252, 253, 254] do
-    # Handle DO/DONT/WILL/WONT
-    new_conn = handle_telnet_option(conn, cmd, opt)
-    process_telnet_commands(rest, new_conn)
-  end
-
-  defp process_telnet_commands(<<255, _cmd, rest::binary>>, conn) do
-    # Handle other IAC (like IAC IAC for literal 255)
-    process_telnet_commands(rest, conn)
-  end
-
-  defp process_telnet_commands(<<byte, rest::binary>>, conn) do
-    {others, next_conn} = process_telnet_commands(rest, conn)
-    {<<byte>> <> others, next_conn}
-  end
-
-  defp handle_telnet_option(conn, cmd, opt) do
-    case {cmd, opt} do
-      {253, 1} ->
-        # Client says DO ECHO (meaning I should echo)
-        # Confirmation for WILL ECHO
-        put_in(conn.connection_options["client-echo"], 0)
-
-      {253, 3} ->
-        # Confirmation for WILL SGA
-        conn
-
-      _ ->
-        conn
-    end
-  end
 
   defp trace_connections?, do: Application.get_env(:alchemoo, :trace_connections, false)
 end

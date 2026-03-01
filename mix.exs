@@ -4,7 +4,7 @@ defmodule Alchemoo.MixProject do
   def project do
     [
       app: :alchemoo,
-      version: "0.6.3",
+      version: "0.7.0",
       elixir: "~> 1.19",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -27,7 +27,10 @@ defmodule Alchemoo.MixProject do
       {:ranch, "~> 2.1"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       # Optional: For SSH fingerprint visualization (drunken bishop)
-      {:fingerart, "~> 1.0"}
+      {:fingerart, "~> 1.0"},
+      {:websock_adapter, "~> 0.5"},
+      {:bandit, "~> 1.0"},
+      {:websockex, "~> 0.4", only: :test}
     ]
   end
 

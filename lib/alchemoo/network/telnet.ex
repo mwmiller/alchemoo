@@ -92,8 +92,8 @@ defmodule Alchemoo.Network.Telnet do
   def init(ref, transport, _opts) do
     {:ok, socket} = :ranch.handshake(ref)
 
-    # Start connection handler
-    case Alchemoo.Connection.Supervisor.start_connection(socket, transport) do
+    # Start connection handler using our unified transport wrapper
+    case Alchemoo.Connection.Supervisor.start_connection(socket, Alchemoo.Network.Telnet.Transport) do
       {:ok, handler_pid} ->
         # Transfer socket control to handler
         :ok = transport.controlling_process(socket, handler_pid)

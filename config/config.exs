@@ -34,12 +34,13 @@ config :alchemoo, :checkpoint,
 config :alchemoo, :network,
   telnet: %{enabled: true, port: 7777},
   ssh: %{enabled: true, port: 2222},
-  websocket: %{enabled: false, port: 4000}
+  websocket: %{enabled: true, port: 4444}
 
 # Optional high-volume trace logging (off by default).
 config :alchemoo,
   trace_builtins: false,
   trace_connections: false,
+  trace_input: false,
   trace_ssh: false,
   trace_runtime_verbs: false,
   trace_runtime_properties: false,
