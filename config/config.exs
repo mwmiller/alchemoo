@@ -44,7 +44,7 @@ config :alchemoo,
   trace_runtime_verbs: false,
   trace_runtime_properties: false,
   trace_tasks: false,
-  trace_output: false,
+  trace_output: true,
   trace_interpreter_eval: false,
   trace_interpreter_statements: false
 

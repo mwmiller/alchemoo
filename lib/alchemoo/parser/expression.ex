@@ -28,7 +28,7 @@ defmodule Alchemoo.Parser.Expression do
   # Tokenize input into list of tokens
   defp tokenize(input) do
     # Regex to match:
-    # 1. String literals: "([^"\\]|\\.)*"
+    # 1. String literals: "(?:[^"\\]|\\.)*" (handles escapes correctly)
     # 2. Object IDs: #[0-9]+
     # 3. Identifiers and numbers: [a-zA-Z_][a-zA-Z0-9_]* | -?[0-9]+
     # 4. Multi-char operators: == | != | <= | >= | && | || | ..
@@ -264,7 +264,7 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp parse_primary([<<"\"", _::binary>> = token | rest]) do
-    str = token |> String.trim("\"") |> unescape_string()
+    str = String.slice(token, 1, String.length(token) - 2) |> unescape_string()
     parse_suffix(%AST.Literal{value: Value.str(str)}, rest)
   end
 
@@ -555,10 +555,12 @@ defmodule Alchemoo.Parser.Expression do
   end
 
   defp unescape_string(str) do
+    # We must be careful not to double-unescape or mis-handle \\"
     str
+    |> String.replace("\\\\", "\0")
+    |> String.replace("\\\"", "\"")
     |> String.replace("\\n", "\n")
     |> String.replace("\\t", "\t")
-    |> String.replace("\\\"", "\"")
-    |> String.replace("\\\\", "\\")
+    |> String.replace("\0", "\\")
   end
 end

@@ -179,20 +179,18 @@ defmodule Alchemoo.Parser.MOOSimpleTest do
     assert {:ok, %AST.Block{statements: [%AST.If{}]}} = MOOSimple.parse(code)
   end
 
-  test "does not treat break-prefixed identifiers as break statement" do
-    code = """
-    breakit = breakit[1];
-    continue_flag = 0;
+  test "parses escaped quotes in string literals" do
+    code = ~S"""
+    player:tell("You say, \"", argstr, "\"");
     """
 
-    assert {:ok,
-            %AST.Block{
-              statements: [
-                %AST.ExprStmt{expr: %AST.Assignment{target: %AST.Var{name: "breakit"}}},
-                %AST.ExprStmt{
-                  expr: %AST.Assignment{target: %AST.Var{name: "continue_flag"}}
-                }
-              ]
-            }} = MOOSimple.parse(code)
+    {:ok, %AST.Block{statements: [%AST.ExprStmt{expr: %AST.VerbCall{args: args}}]}} =
+      MOOSimple.parse(code)
+
+    assert [
+             %AST.Literal{value: {:str, "You say, \""}},
+             %AST.Var{name: "argstr"},
+             %AST.Literal{value: {:str, "\""}}
+           ] = args
   end
 end
