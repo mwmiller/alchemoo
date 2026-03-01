@@ -11,6 +11,7 @@ defmodule Alchemoo.Builtins do
   alias Alchemoo.Connection.Handler
   alias Alchemoo.Connection.Supervisor, as: ConnSupervisor
   alias Alchemoo.Database.Flags
+  alias Alchemoo.Database.Permissions
   alias Alchemoo.Database.Resolver
   alias Alchemoo.Database.Server, as: DBServer
   alias Alchemoo.Runtime
@@ -1091,7 +1092,15 @@ defmodule Alchemoo.Builtins do
   def property_info([{:obj, obj_id}, {:str, prop_name}]) do
     case DBServer.get_property_info(obj_id, prop_name) do
       {:ok, {owner, perms}} ->
-        Value.list([Value.obj(owner), Value.str(format_perms(perms))])
+        # Check permissions
+        player_id = get_current_player()
+        prop_info = %{owner: owner, perms: perms}
+
+        if Permissions.property_allows?(prop_info, player_id, Permissions.read()) do
+          Value.list([Value.obj(owner), Value.str(format_perms(perms))])
+        else
+          Value.err(:E_PERM)
+        end
 
       {:error, err} ->
         Value.err(err)
@@ -1102,6 +1111,30 @@ defmodule Alchemoo.Builtins do
 
   # set_property_info(obj, prop, info) - set property info
   def set_property_info([{:obj, obj_id}, {:str, prop_name}, {:list, info}]) do
+    player_id = get_current_player()
+
+    case DBServer.get_property_info(obj_id, prop_name) do
+      {:ok, {old_owner, old_perms}} ->
+        if Permissions.property_allows?(
+             %{owner: old_owner, perms: old_perms},
+             player_id,
+             Permissions.write()
+           ) do
+          do_set_property_info(obj_id, prop_name, info)
+        else
+          Value.err(:E_PERM)
+        end
+
+      {:error, err} ->
+        Value.err(err)
+    end
+  end
+
+  def set_property_info(_) do
+    Value.err(:E_ARGS)
+  end
+
+  defp do_set_property_info(obj_id, prop_name, info) do
     owner =
       case Enum.at(info, 0) do
         {:obj, id} -> id
@@ -1119,8 +1152,6 @@ defmodule Alchemoo.Builtins do
       {:error, err} -> Value.err(err)
     end
   end
-
-  def set_property_info(_), do: Value.err(:E_ARGS)
 
   # is_clear_property(obj, prop) - check if property is clear
   def clear_property?([{:obj, obj_id}, {:str, prop_name}]) do
@@ -1359,7 +1390,14 @@ defmodule Alchemoo.Builtins do
   def verb_info([{:obj, obj_id}, verb_desc]) do
     with {:ok, verb_name} <- resolve_verb_desc(obj_id, verb_desc),
          {:ok, {owner, perms, names}} <- DBServer.get_verb_info(obj_id, verb_name) do
-      Value.list([Value.obj(owner), Value.str(format_perms(perms)), Value.str(names)])
+      # Check permissions
+      player_id = get_current_player()
+
+      if Permissions.verb_allows?(%{owner: owner, perms: perms}, player_id, Permissions.read()) do
+        Value.list([Value.obj(owner), Value.str(format_perms(perms)), Value.str(names)])
+      else
+        Value.err(:E_PERM)
+      end
     else
       {:error, err} ->
         Value.err(err)
@@ -1370,6 +1408,13 @@ defmodule Alchemoo.Builtins do
   end
 
   def verb_info(_), do: Value.err(:E_ARGS)
+
+  defp get_current_player do
+    case Process.get(:task_context) do
+      nil -> -1
+      ctx -> ctx[:perms] || -1
+    end
+  end
 
   defp resolve_verb_desc(_obj_id, {:str, verb_name}), do: {:ok, verb_name}
 
@@ -1399,21 +1444,37 @@ defmodule Alchemoo.Builtins do
 
   # set_verb_info(obj, verb, info) - set verb info
   def set_verb_info([{:obj, obj_id}, verb_desc, {:list, info}]) do
-    case resolve_verb_desc(obj_id, verb_desc) do
-      {:ok, verb_name} ->
-        {owner, perms, name} = extract_verb_info(info, obj_id, verb_name)
+    player_id = get_current_player()
 
-        case DBServer.set_verb_info(obj_id, verb_name, {owner, perms, name}) do
-          :ok -> Value.num(0)
-          {:error, err} -> Value.err(err)
-        end
-
+    with {:ok, verb_name} <- resolve_verb_desc(obj_id, verb_desc),
+         {:ok, {old_owner, old_perms, _old_names}} <- DBServer.get_verb_info(obj_id, verb_name) do
+      if Permissions.verb_allows?(
+           %{owner: old_owner, perms: old_perms},
+           player_id,
+           Permissions.write()
+         ) do
+        do_set_verb_info(obj_id, verb_name, info)
+      else
+        Value.err(:E_PERM)
+      end
+    else
       {:error, err} ->
         Value.err(err)
     end
   end
 
-  def set_verb_info(_), do: Value.err(:E_ARGS)
+  def set_verb_info(_) do
+    Value.err(:E_ARGS)
+  end
+
+  defp do_set_verb_info(obj_id, verb_name, info) do
+    {owner, perms, name} = extract_verb_info(info, obj_id, verb_name)
+
+    case DBServer.set_verb_info(obj_id, verb_name, {owner, perms, name}) do
+      :ok -> Value.num(0)
+      {:error, err} -> Value.err(err)
+    end
+  end
 
   def extract_verb_info(info, default_owner, default_name) do
     owner =
@@ -1497,19 +1558,30 @@ defmodule Alchemoo.Builtins do
         Value.err(:E_VERBNF)
 
       verb ->
-        code_lines = Enum.map(verb.code, &Value.str/1)
+        # Check permissions
+        player_id = get_current_player()
 
-        if full_info? do
-          Value.list([
-            Value.list(code_lines),
-            Value.obj(verb.owner),
-            Value.str(format_perms(verb.perms)),
-            Value.str(verb.name),
-            format_verb_args(verb.args)
-          ])
+        if Permissions.verb_allows?(verb, player_id, Permissions.read()) do
+          format_verb_code_info(verb, full_info?)
         else
-          Value.list(code_lines)
+          Value.err(:E_PERM)
         end
+    end
+  end
+
+  defp format_verb_code_info(verb, full_info?) do
+    code_lines = Enum.map(verb.code, &Value.str/1)
+
+    if full_info? do
+      Value.list([
+        Value.list(code_lines),
+        Value.obj(verb.owner),
+        Value.str(format_perms(verb.perms)),
+        Value.str(verb.name),
+        format_verb_args(verb.args)
+      ])
+    else
+      Value.list(code_lines)
     end
   end
 
@@ -1606,6 +1678,26 @@ defmodule Alchemoo.Builtins do
 
   # set_verb_code(obj, verb, code) - set verb code
   def set_verb_code([{:obj, obj_id}, {:str, verb_name}, {:list, code}]) do
+    player_id = get_current_player()
+
+    case DBServer.get_verb_info(obj_id, verb_name) do
+      {:ok, {owner, perms, _names}} ->
+        if Permissions.verb_allows?(%{owner: owner, perms: perms}, player_id, Permissions.write()) do
+          do_set_verb_code(obj_id, verb_name, code)
+        else
+          Value.err(:E_PERM)
+        end
+
+      {:error, err} ->
+        Value.err(err)
+    end
+  end
+
+  def set_verb_code(_) do
+    Value.err(:E_ARGS)
+  end
+
+  defp do_set_verb_code(obj_id, verb_name, code) do
     # Convert code lines to strings
     code_lines =
       Enum.map(code, fn
@@ -1618,8 +1710,6 @@ defmodule Alchemoo.Builtins do
       {:error, err} -> Value.err(err)
     end
   end
-
-  def set_verb_code(_), do: Value.err(:E_ARGS)
 
   # function_info(name) - get built-in function metadata
   def function_info([{:str, name}]) do

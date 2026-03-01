@@ -118,9 +118,9 @@ defmodule Alchemoo.Task do
   def init(opts) do
     # Merge context into environment for variable access
     initial_env = Keyword.get(opts, :env, %{})
-    player_id = Keyword.get(opts, :player, 2)
-    this_id = Keyword.get(opts, :this, 2)
-    caller_id = Keyword.get(opts, :caller, 2)
+    player_id = Keyword.get(opts, :player, -1)
+    this_id = Keyword.get(opts, :this, -1)
+    caller_id = Keyword.get(opts, :caller, -1)
     args = Keyword.get(opts, :args, [])
     verb_name = Keyword.get(opts, :verb_name, "(unknown)")
 
