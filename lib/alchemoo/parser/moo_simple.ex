@@ -159,18 +159,40 @@ defmodule Alchemoo.Parser.MOOSimple do
 
   defp handle_for(for_str, rest) do
     # Try: for var in (expr)
-    case Regex.run(~r/(\w+)\s+in\s+\((.+)\)/, for_str) do
+    # Handle optional parentheses around the whole in clause
+    # e.g. for i in ({this, @$object_utils:ancestors(this)})
+    case Regex.run(~r/(\w+)\s+in\s+[\(\[](.+)[\)\]]/, for_str) do
       [_, var, expr_str] ->
-        case Expression.parse(expr_str) do
-          {:ok, list_expr, _} -> parse_for_body(var, list_expr, rest)
-          err -> err
+        # If it matches [expr1..expr2] it will be caught here first if we aren't careful
+        if String.contains?(expr_str, "..") and not String.contains?(expr_str, "{") do
+          case String.split(expr_str, "..", parts: 2) do
+            [start_str, end_str] -> parse_for_range(var, start_str, end_str, rest)
+            _ -> {:error, {:invalid_for, for_str}}
+          end
+        else
+          case Expression.parse(expr_str) do
+            {:ok, list_expr, _} -> parse_for_body(var, list_expr, rest)
+            _ ->
+              # Maybe it didn't have the extra parens?
+              case Regex.run(~r/(\w+)\s+in\s+(.+)/, for_str) do
+                [_, var, expr_str] ->
+                  case Expression.parse(expr_str) do
+                    {:ok, list_expr, _} -> parse_for_body(var, list_expr, rest)
+                    err -> err
+                  end
+                _ -> {:error, {:invalid_for, for_str}}
+              end
+          end
         end
 
       _ ->
-        # Try: for var in [expr1..expr2]
-        case Regex.run(~r/(\w+)\s+in\s+\[(.+)\.\.(.+)\]/, for_str) do
-          [_, var, start_str, end_str] ->
-            parse_for_range(var, start_str, end_str, rest)
+        # Simple for var in expr
+        case Regex.run(~r/(\w+)\s+in\s+(.+)/, for_str) do
+          [_, var, expr_str] ->
+            case Expression.parse(expr_str) do
+              {:ok, list_expr, _} -> parse_for_body(var, list_expr, rest)
+              err -> err
+            end
 
           _ ->
             {:error, {:invalid_for, for_str}}

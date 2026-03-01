@@ -279,7 +279,7 @@ defmodule Alchemoo.Command.Executor do
       "args" => args_list,
       "dobj" => Value.obj(parsed.dobj_id),
       "dobjstr" => Value.str(parsed.dobj || ""),
-      "prepstr" => Value.str(parsed.prep || ""),
+      "prepstr" => Value.str(parsed.prepstr || ""),
       "iobj" => Value.obj(parsed.iobj_id),
       "iobjstr" => Value.str(parsed.iobj || "")
     }
@@ -308,27 +308,9 @@ defmodule Alchemoo.Command.Executor do
   end
 
   defp build_args(parsed) do
-    args = []
-
-    args =
-      case parsed.dobj do
-        nil -> args
-        val -> [Value.str(val) | args]
-      end
-
-    args =
-      case parsed.prep do
-        nil -> args
-        val -> [Value.str(val) | args]
-      end
-
-    args =
-      case parsed.iobj do
-        nil -> args
-        val -> [Value.str(val) | args]
-      end
-
-    Value.list(Enum.reverse(args))
+    # In MOO, 'args' is a list of all words in the argument string
+    words = String.split(parsed.argstr, ~r/\s+/, trim: true)
+    Value.list(Enum.map(words, &Value.str/1))
   end
 
   defp send_error(handler_pid, message) do

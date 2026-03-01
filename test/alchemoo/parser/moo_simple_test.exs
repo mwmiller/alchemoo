@@ -179,6 +179,22 @@ defmodule Alchemoo.Parser.MOOSimpleTest do
     assert {:ok, %AST.Block{statements: [%AST.If{}]}} = MOOSimple.parse(code)
   end
 
+  test "parses complex for loop expression from LambdaCore login" do
+    code = """
+    for i in ({this, @$object_utils:ancestors(this)})
+      try
+        if ((verb_args(i, verb) == {"any", "none", "any"}) && index(verb_info(i, verb)[2], "x"))
+          return args;
+        endif
+      except (ANY)
+        continue i;
+      endtry
+    endfor
+    """
+
+    assert {:ok, %AST.Block{statements: [%AST.ForList{}]}} = MOOSimple.parse(code)
+  end
+
   test "parses escaped quotes in string literals" do
     code = ~S"""
     player:tell("You say, \"", argstr, "\"");
