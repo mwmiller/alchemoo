@@ -83,5 +83,50 @@ defmodule Alchemoo.Checkpoint.ServerTest do
       # Check has objects
       assert content =~ "#0"
     end
+
+    test "rotates MOO exports without crashing" do
+      # Stop the global server and start a custom one for this test
+      if GenServer.whereis(Checkpoint) do
+        Supervisor.terminate_child(Alchemoo.Supervisor, Checkpoint)
+        Supervisor.delete_child(Alchemoo.Supervisor, Checkpoint)
+      end
+
+      # Load a database
+      DB.load("test/fixtures/lambdacore.db")
+
+      {:ok, _pid} =
+        Checkpoint.start_link(
+          checkpoint_dir: @test_dir,
+          keep_last_moo: 2,
+          moo_name: "RotationTest"
+        )
+
+      on_exit(fn ->
+        # Restart the global one for other tests if it's missing
+        if !GenServer.whereis(Checkpoint) do
+          Supervisor.start_child(Alchemoo.Supervisor, {Checkpoint, []})
+        end
+      end)
+
+      # Export 1
+      {:ok, _} = Checkpoint.export_moo()
+      Process.sleep(1100)
+
+      # Export 2
+      {:ok, _} = Checkpoint.export_moo()
+      Process.sleep(1100)
+
+      # Export 3 - should trigger cleanup
+      {:ok, path3} = Checkpoint.export_moo()
+
+      files =
+        File.ls!(@test_dir)
+        |> Enum.filter(&String.ends_with?(&1, ".db"))
+        |> Enum.sort(:desc)
+
+      # Should have kept 2 newest
+      assert length(files) == 2
+      assert Enum.member?(files, Path.basename(path3))
+    end
   end
 end

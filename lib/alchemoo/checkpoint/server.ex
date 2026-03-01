@@ -388,8 +388,10 @@ defmodule Alchemoo.Checkpoint.Server do
   defp file_older_than?(filename, dir, timestamp) do
     case File.stat(Path.join(dir, filename)) do
       {:ok, stat} ->
-        # stat.mtime is already a NaiveDateTime in newer Elixir
-        DateTime.from_naive!(stat.mtime, "Etc/UTC")
+        # stat.mtime is an Erlang datetime tuple {{y, m, d}, {h, m, s}}
+        stat.mtime
+        |> NaiveDateTime.from_erl!()
+        |> DateTime.from_naive!("Etc/UTC")
         |> DateTime.to_unix()
         |> Kernel.<(timestamp)
 
