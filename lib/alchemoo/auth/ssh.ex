@@ -228,10 +228,10 @@ defmodule Alchemoo.Auth.SSH do
     # public_key is an Erlang record (e.g., #'RSAPublicKey'{})
     # For the string part, we want a label (e.g., "ssh-rsa")
     type = get_key_type(public_key)
-    fingerprint = get_fingerprint(public_key)
+    {fingerprint, hash_bin} = get_fingerprint(public_key)
 
-    # Fingerart works with binary or records
-    art = Fingerart.generate(:erlang.term_to_binary(public_key), title: type)
+    # Fingerart works with the 16-byte MD5 hash for standard SSH randomart
+    art = Fingerart.generate(hash_bin, title: type)
 
     {:ok, type, art, fingerprint}
   rescue
@@ -243,13 +243,17 @@ defmodule Alchemoo.Auth.SSH do
     # or SHA256. For legacy compatibility and 'classic' look, MD5 hex is common.
     # Erlang public_key can give us the DER blob
     blob = :erlang.term_to_binary(public_key)
-    hash = :crypto.hash(:md5, blob) |> Base.encode16(case: :lower)
+    hash_bin = :crypto.hash(:md5, blob)
+    hash_hex = Base.encode16(hash_bin, case: :lower)
 
     # Format as pairs: aa:bb:cc...
-    hash
-    |> String.graphemes()
-    |> Enum.chunk_every(2)
-    |> Enum.map_join(":", &Enum.join/1)
+    fingerprint =
+      hash_hex
+      |> String.graphemes()
+      |> Enum.chunk_every(2)
+      |> Enum.map_join(":", &Enum.join/1)
+
+    {fingerprint, hash_bin}
   end
 
   defp get_key_type(key) when is_tuple(key) do
