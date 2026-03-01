@@ -11,7 +11,10 @@ defmodule Alchemoo.Builtins do
   alias Alchemoo.Connection.Handler
   alias Alchemoo.Connection.Supervisor, as: ConnSupervisor
   alias Alchemoo.Database.Flags
+  alias Alchemoo.Database.Resolver
   alias Alchemoo.Database.Server, as: DBServer
+  alias Alchemoo.Runtime
+  alias Alchemoo.TaskSupervisor
   alias Alchemoo.Value
 
   @doc """
@@ -1194,9 +1197,20 @@ defmodule Alchemoo.Builtins do
 
   # recycle(obj) - delete object
   def recycle([{:obj, obj_id}]) do
-    case DBServer.recycle_object(obj_id) do
-      :ok -> Value.num(0)
-      {:error, err} -> Value.err(err)
+    perms = get_task_context(:perms) || -1
+
+    with {:ok, obj} <- DBServer.get_object(obj_id),
+         true <- wizard_internal?(perms) or perms == obj.owner do
+      # Call obj:recycle() before deletion
+      spawn_move_task(obj_id, "recycle", [], perms)
+
+      case DBServer.recycle_object(obj_id) do
+        :ok -> Value.num(1)
+        {:error, err} -> Value.err(err)
+      end
+    else
+      {:error, _} -> Value.err(:E_INVIND)
+      false -> Value.err(:E_PERM)
     end
   end
 
@@ -1204,9 +1218,22 @@ defmodule Alchemoo.Builtins do
 
   # chparent(obj, parent) - change parent
   def chparent([{:obj, obj_id}, {:obj, parent_id}]) do
-    case DBServer.change_parent(obj_id, parent_id) do
-      :ok -> Value.num(0)
-      {:error, err} -> Value.err(err)
+    perms = get_task_context(:perms) || -1
+
+    with {:ok, obj} <- DBServer.get_object(obj_id),
+         true <- wizard_internal?(perms) or perms == obj.owner do
+      case DBServer.change_parent(obj_id, parent_id) do
+        :ok ->
+          # Call obj:initialize() after change
+          spawn_move_task(obj_id, "initialize", [], perms)
+          Value.num(1)
+
+        {:error, err} ->
+          Value.err(err)
+      end
+    else
+      {:error, _} -> Value.err(:E_INVIND)
+      false -> Value.err(:E_PERM)
     end
   end
 
@@ -1214,13 +1241,103 @@ defmodule Alchemoo.Builtins do
 
   # move(obj, dest) - move object to new location
   def move([{:obj, obj_id}, {:obj, dest_id}]) do
-    case DBServer.move_object(obj_id, dest_id) do
-      :ok -> Value.num(0)
-      {:error, err} -> Value.err(err)
+    # 1. Check permissions
+    perms = get_task_context(:perms) || -1
+
+    case DBServer.get_object(obj_id) do
+      {:ok, obj} ->
+        is_wiz = wizard_internal?(perms)
+
+        if is_wiz or perms == obj.owner do
+          do_move_with_side_effects(obj_id, dest_id, perms, is_wiz)
+        else
+          Value.err(:E_PERM)
+        end
+
+      _ ->
+        Value.err(:E_INVIND)
     end
   end
 
   def move(_), do: Value.err(:E_ARGS)
+
+  defp do_move_with_side_effects(obj_id, dest_id, perms, is_wiz) do
+    {:ok, obj} = DBServer.get_object(obj_id)
+    old_loc = obj.location
+
+    case old_loc == dest_id do
+      true ->
+        Value.num(1)
+
+      false ->
+        with true <- check_destination_accept(obj_id, dest_id, is_wiz),
+             :ok <- DBServer.move_object(obj_id, dest_id) do
+          trigger_move_verbs(obj_id, old_loc, dest_id, perms)
+          Value.num(1)
+        else
+          false -> Value.err(:E_NACC)
+          {:error, err} -> Value.err(err)
+        end
+    end
+  end
+
+  defp check_destination_accept(_obj_id, dest_id, true), do: dest_id < 0 or true
+  defp check_destination_accept(_obj_id, dest_id, _is_wiz) when dest_id < 0, do: true
+
+  defp check_destination_accept(obj_id, dest_id, _is_wiz) do
+    runtime = Runtime.new(DBServer.get_snapshot())
+    env = %{:runtime => runtime}
+
+    case Runtime.call_verb(runtime, Value.obj(dest_id), "accept", [Value.obj(obj_id)], env) do
+      {:ok, val, _} -> Value.truthy?(val)
+      _ -> false
+    end
+  end
+
+  defp trigger_move_verbs(obj_id, old_loc, dest_id, perms) do
+    if old_loc >= 0, do: spawn_move_task(old_loc, "exitfunc", [Value.obj(obj_id)], perms)
+    if dest_id >= 0, do: spawn_move_task(dest_id, "enterfunc", [Value.obj(obj_id)], perms)
+  end
+
+  defp spawn_move_task(this_id, verb_name, args, perms) do
+    db = DBServer.get_snapshot()
+
+    case Resolver.find_verb(db, this_id, verb_name) do
+      {:ok, _found_id, verb} ->
+        runtime = Runtime.new(db)
+
+        env = %{
+          :runtime => runtime,
+          "player" => Value.obj(perms),
+          "this" => Value.obj(this_id),
+          "caller" => Value.obj(perms),
+          "verb" => Value.str(verb_name),
+          "args" => Value.list(args)
+        }
+
+        task_opts = [
+          player: perms,
+          this: this_id,
+          caller: perms,
+          perms: perms,
+          args: args,
+          verb_name: verb_name
+        ]
+
+        code = Enum.join(verb.code, "\n")
+        TaskSupervisor.spawn_task(code, env, task_opts)
+
+      _ ->
+        :ok
+    end
+  end
+
+  defp wizard_internal?(perms) do
+    case DBServer.get_object(perms) do
+      {:ok, obj} -> Flags.set?(obj.flags, Flags.wizard())
+      _ -> false
+    end
+  end
 
   ## Verb Management
 
@@ -2375,7 +2492,7 @@ defmodule Alchemoo.Builtins do
 
   # read_binary(filename) - read file from restricted directory
   def read_binary([{:str, filename}]) do
-    if wizard?([player_fn([])]) == Value.num(1) do
+    if wizard?([Value.obj(get_task_context(:perms) || -1)]) == Value.num(1) do
       # Restrict to 'files/' directory for security
       base_dir = Application.get_env(:alchemoo, :binary_dir, "files")
       # Prevent directory traversal
