@@ -126,8 +126,8 @@ defmodule Alchemoo.Command.Executor do
       player: player_id,
       this: 0,
       caller: -1,
-      perms: 2,
-      caller_perms: 2,
+      perms: player_id,
+      caller_perms: player_id,
       args: Enum.map(words, &Value.str/1),
       handler_pid: handler_pid,
       verb_name: "do_command"

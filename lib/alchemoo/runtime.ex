@@ -128,10 +128,10 @@ defmodule Alchemoo.Runtime do
     if is_nil(old_context) do
       Process.put(:task_context, %{
         this: actual_receiver,
-        player: 2,
+        player: -1,
         caller: -1,
-        perms: 2,
-        caller_perms: 2,
+        perms: -1,
+        caller_perms: -1,
         verb_definer: obj_id,
         verb_name: verb_name,
         stack: []

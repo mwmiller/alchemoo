@@ -23,6 +23,7 @@ defmodule Alchemoo.Application do
     children = [
       {Alchemoo.Database.Server, []},
       {Registry, keys: :unique, name: Alchemoo.TaskRegistry},
+      {Registry, keys: :unique, name: Alchemoo.PlayerRegistry},
       Alchemoo.TaskSupervisor,
       Alchemoo.Connection.Supervisor,
       {Alchemoo.Checkpoint.Server, []},
@@ -74,11 +75,11 @@ defmodule Alchemoo.Application do
         }
 
         task_opts = [
-          player: 2,
+          player: -1,
           this: obj_id,
           caller: -1,
-          perms: 2,
-          caller_perms: 2,
+          perms: -1,
+          caller_perms: -1,
           args: [],
           verb_name: verb_name
         ]

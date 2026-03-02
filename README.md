@@ -2,7 +2,7 @@
 
 A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM VM.
 
-**Version:** 0.7.0  
+**Version:** 0.7.1  
 
 ## Features
 
@@ -37,7 +37,15 @@ Alchemoo is now a functional MOO server that can:
 **Current Test Status (March 2, 2026):** 164 tests, 0 failures
 **Commits:** 80+
 
-## Recent Changes (v0.7.0)
+## Recent Changes
+
+### v0.7.1 (March 2, 2026)
+- **Player Registry**: Added `Alchemoo.PlayerRegistry` for fast player-to-connection lookups
+- **Security Fix**: Removed hardcoded player/perms defaults (#2) - tasks now properly inherit context
+- **Bug Fix**: Fixed `notify()` to use task context player instead of argument
+- **Bug Fix**: Fixed player registration on login to handle connection booting correctly
+
+### v0.7.0 (March 2, 2026)
 
 ### Parser Improvements
 - **Namespace reorganization**: Moved parser to `Alchemoo.MOOCode.Parser` with proper module structure

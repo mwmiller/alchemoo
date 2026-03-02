@@ -612,17 +612,21 @@ defmodule Alchemoo.Builtins do
     notify([Value.obj(player_id), Value.str(text), Value.num(0)])
   end
 
-  def notify([{:obj, player_id}, {:str, text}, {:num, no_newline}]) do
-    # Find connection for this player and send text
-    case find_player_connection(player_id) do
-      {:ok, handler_pid} ->
-        output = if no_newline != 0, do: text, else: text <> "\n"
-        Handler.send_output(handler_pid, output)
-        Value.num(1)
+  def notify([{:obj, _player_id}, {:str, text}, {:num, no_newline}]) do
+    player_id = get_task_context(:player)
 
-      {:error, _} ->
-        # Player not connected, fail silently (MOO behavior)
-        Value.num(0)
+    if is_nil(player_id) or player_id < 0 do
+      raise "notify called without valid player context (player=#{inspect(player_id)})"
+    end
+
+    with [{pid, _}] <- Registry.lookup(Alchemoo.PlayerRegistry, player_id),
+         true <- is_pid(pid),
+         true <- Process.alive?(pid) do
+      output = if no_newline != 0, do: text, else: text <> "\n"
+      Handler.send_output(pid, output)
+      Value.num(1)
+    else
+      _ -> Value.num(0)
     end
   end
 
@@ -660,32 +664,20 @@ defmodule Alchemoo.Builtins do
   end
 
   def find_player_connection(player_id) do
-    # Get all connection handlers and find one for this player
-    connections = ConnSupervisor.list_connections()
+    case Registry.lookup(Alchemoo.PlayerRegistry, player_id) do
+      [{pid, _}] when is_pid(pid) ->
+        if Process.alive?(pid) do
+          {:ok, pid}
+        else
+          {:error, :not_found}
+        end
 
-    if trace_connections?() do
-      Logger.debug(
-        "Finding connection for ##{player_id} among #{length(connections)} connections"
-      )
+      _ ->
+        {:error, :not_found}
     end
-
-    Enum.find_value(connections, {:error, :not_found}, fn pid ->
-      match_player_connection(pid, player_id, Handler.info(pid))
-    end)
   end
-
-  defp match_player_connection(pid, player_id, %{player_id: pid_player_id} = info) do
-    if trace_connections?() do
-      Logger.debug("Connection #{inspect(pid)}: player_id=#{pid_player_id} state=#{info.state}")
-    end
-
-    if pid_player_id == player_id, do: {:ok, pid}, else: nil
-  end
-
-  defp match_player_connection(_pid, _player_id, _info), do: nil
 
   defp trace_builtins?, do: Application.get_env(:alchemoo, :trace_builtins, false)
-  defp trace_connections?, do: Application.get_env(:alchemoo, :trace_connections, false)
 
   # connected_players([full]) - list of connected player objects or info
   def connected_players([]) do

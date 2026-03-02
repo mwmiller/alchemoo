@@ -47,6 +47,7 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   def send_output(pid, text) when is_binary(text) do
+    :logger.error("DEBUG send_output: to=#{inspect(pid)} text=#{inspect(text)}")
     GenServer.cast(pid, {:output, text})
   end
 
@@ -345,7 +346,18 @@ defmodule Alchemoo.Connection.Handler do
     if trace_connections?(),
       do: Logger.debug("Connection handler #{conn.player_id} terminating: #{inspect(reason)}")
 
+    # Unregister player from PlayerRegistry only if we're still the registered connection
+    # This prevents a new connection from being unregistered when an old connection terminates
     if conn.player_id && conn.player_id >= 0 do
+      case Registry.lookup(Alchemoo.PlayerRegistry, conn.player_id) do
+        [{pid, _}] when pid == self() ->
+          Registry.unregister(Alchemoo.PlayerRegistry, conn.player_id)
+
+        _ ->
+          # Another connection is registered, don't unregister it
+          :ok
+      end
+
       try do
         MOOTask.kill_player_tasks(conn.player_id)
       catch
@@ -452,6 +464,13 @@ defmodule Alchemoo.Connection.Handler do
         conn
       end
 
+    # Register player in PlayerRegistry for fast lookup
+    # Do this BEFORE booting existing connections to avoid race conditions
+    Registry.register(Alchemoo.PlayerRegistry, player_id, %{pid: self()})
+
+    # Boot any existing connections for this player
+    boot_existing_connection(player_id)
+
     %{conn | state: :logged_in, player_id: player_id}
   end
 
@@ -494,6 +513,7 @@ defmodule Alchemoo.Connection.Handler do
           player: conn.player_id,
           this: 0,
           caller: -1,
+          # Login task runs with wizard perms to allow system setup
           perms: 2,
           caller_perms: 2,
           args: Enum.map(args, &Value.str/1),
@@ -680,6 +700,7 @@ defmodule Alchemoo.Connection.Handler do
       this: 0,
       player: -1,
       caller: -1,
+      # Diagnostic task runs with wizard perms
       perms: 2,
       caller_perms: 2,
       verb_definer: 0,
