@@ -608,25 +608,49 @@ defmodule Alchemoo.Builtins do
   ## Output/Communication
 
   # notify(player, text [, no_newline]) - send text to player
+  # Queues notification for flushing after all persistence succeeds
   def notify([{:obj, player_id}, {:str, text}]) do
     notify([Value.obj(player_id), Value.str(text), Value.num(0)])
   end
 
   def notify([{:obj, player_id}, {:str, text}, {:num, no_newline}]) do
-    # Send immediately - MOO notify is synchronous
+    # Queue notification for later flushing (after persistence succeeds)
     output = if no_newline != 0, do: text, else: text <> "\n"
-    case find_player_connection(player_id) do
-      {:ok, handler_pid} ->
-        Handler.send_output(handler_pid, output)
-        Value.num(1)
-
-      {:error, _} ->
-        # Player not connected, fail silently (MOO behavior)
-        Value.num(0)
-    end
+    queue_notification(player_id, output)
+    Value.num(1)
   end
 
   def notify(_), do: Value.err(:E_ARGS)
+
+  defp queue_notification(player_id, text) do
+    pending = Process.get(:pending_notifications) || []
+    Process.put(:pending_notifications, [{player_id, text} | pending])
+  end
+
+  @doc "Flush all pending notifications (called after successful persistence)"
+  def flush_notifications do
+    case Process.get(:pending_notifications, []) do
+      [] ->
+        :ok
+
+      pending ->
+        # Reverse to maintain order
+        pending
+        |> Enum.reverse()
+        |> Enum.each(fn {player_id, text} ->
+          case find_player_connection(player_id) do
+            {:ok, handler_pid} ->
+              Handler.send_output(handler_pid, text)
+
+            {:error, _} ->
+              # Player not connected, silently drop
+              :ok
+          end
+        end)
+
+        Process.delete(:pending_notifications)
+    end
+  end
 
   # notify_except(room, text [, skip_list]) - send text to all in room except skip_list
   def notify_except_fn([{:obj, room_id}, {:str, text}]) do

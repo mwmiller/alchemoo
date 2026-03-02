@@ -305,30 +305,43 @@ defmodule Alchemoo.Task do
           ast
       end
 
-    # Initialize ticks in process dictionary
+    # Initialize ticks and side effect queue in process dictionary
     Process.put(:ticks_remaining, task.tick_quota - task.ticks_used)
+    Process.put(:pending_notifications, [])
 
     # Execute with tick counting
     try do
       {result, final_env} = execute_statements(ast.statements, task.env)
+
+      # All persistence succeeded during execution, now flush notifications
+      Alchemoo.Builtins.flush_notifications()
 
       ticks_used = task.tick_quota - task.ticks_used - Process.get(:ticks_remaining)
       new_task = %{task | ticks_used: task.ticks_used + ticks_used, env: final_env}
       {:ok, result, new_task}
     catch
       {:return, value} ->
+        # All persistence succeeded, flush notifications before returning
+        Alchemoo.Builtins.flush_notifications()
+        
         ticks_used = task.tick_quota - task.ticks_used - Process.get(:ticks_remaining)
         new_task = %{task | ticks_used: task.ticks_used + ticks_used}
         {:ok, value, new_task}
 
       :quota_exceeded ->
+        # Quota exceeded - discard pending notifications
+        Process.delete(:pending_notifications)
         new_task = %{task | ticks_used: task.tick_quota}
         {:quota_exceeded, new_task}
 
       {:error, reason, new_env} ->
+        # Error during execution - discard pending notifications
+        Process.delete(:pending_notifications)
         {:error, reason, %{task | env: new_env}}
 
       {:error, reason} ->
+        # Error during execution - discard pending notifications
+        Process.delete(:pending_notifications)
         {:error, reason, task}
     end
   end
