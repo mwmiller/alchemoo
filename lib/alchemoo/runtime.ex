@@ -84,12 +84,10 @@ defmodule Alchemoo.Runtime do
     change_result =
       case Enum.find_index(object.properties, &(String.downcase(&1.name) == search_name)) do
         idx when is_integer(idx) ->
-          # Compute new properties list
           new_properties = List.update_at(object.properties, idx, &%{&1 | value: value})
-          {:direct_property, idx, new_properties}
+          {:direct_property, new_properties}
 
         nil ->
-          # Compute new overridden_properties map
           new_prop = %Alchemoo.Database.Property{
             name: prop_name,
             value: value,
@@ -100,14 +98,14 @@ defmodule Alchemoo.Runtime do
           {:overridden_property, new_overridden}
       end
 
-    # Persist to database server FIRST (transactional - if this fails, discard changes)
+    # Persist to database server FIRST
     persist_result = Alchemoo.Database.Server.set_property(obj_id, prop_name, value)
+    :logger.error("DEBUG persist: #{obj_id}.#{prop_name} -> #{inspect(persist_result)}")
 
     case persist_result do
       :ok ->
-        # Persistence succeeded, now apply changes to local runtime copy
         case change_result do
-          {:direct_property, _idx, new_properties} ->
+          {:direct_property, new_properties} ->
             new_object = %{object | properties: new_properties}
             new_objects = Map.put(runtime.objects, obj_id, new_object)
             {:ok, value, %{runtime | objects: new_objects}}
@@ -119,8 +117,7 @@ defmodule Alchemoo.Runtime do
         end
 
       {:error, reason} ->
-        # Persistence failed, discard all changes
-        :logger.error("Failed to persist property: #{obj_id}.#{prop_name} = #{inspect(value)}: #{inspect(reason)}")
+        :logger.error("Failed to persist: #{obj_id}.#{prop_name}: #{inspect(reason)}")
         {:error, Value.err(:E_PERM)}
     end
   end

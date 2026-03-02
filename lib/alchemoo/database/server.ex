@@ -11,7 +11,7 @@ defmodule Alchemoo.Database.Server do
   alias Alchemoo.Database.Property
   alias Alchemoo.Database.Verb
 
-  defstruct [:db, :db_path]
+  defstruct [:db, :db_path, transactions: %{}]
 
   ## Client API
 
@@ -41,6 +41,26 @@ defmodule Alchemoo.Database.Server do
 
   def get_property(obj_id, prop_name) do
     GenServer.call(__MODULE__, {:get_property, obj_id, prop_name})
+  end
+
+  @doc "Begin a new transaction, returns transaction ID"
+  def begin_transaction do
+    GenServer.call(__MODULE__, :begin_transaction)
+  end
+
+  @doc "Commit a transaction, returns :ok or {:error, reason}"
+  def commit_transaction(tx_id) do
+    GenServer.call(__MODULE__, {:commit_transaction, tx_id})
+  end
+
+  @doc "Rollback a transaction"
+  def rollback_transaction(tx_id) do
+    GenServer.call(__MODULE__, {:rollback_transaction, tx_id})
+  end
+
+  @doc "Set property within a transaction"
+  def set_property_tx(tx_id, obj_id, prop_name, value) do
+    GenServer.call(__MODULE__, {:set_property_tx, tx_id, obj_id, prop_name, value})
   end
 
   def set_property(obj_id, prop_name, value) do
@@ -216,6 +236,71 @@ defmodule Alchemoo.Database.Server do
       nil -> {:reply, {:error, :E_INVIND}, state}
       obj -> handle_set_property(obj, prop_name, value, state)
     end
+  end
+
+  @impl true
+  def handle_call(:begin_transaction, _from, state) do
+    tx_id = make_ref()
+    tx = %{
+      id: tx_id,
+      changes: %{},  # %{obj_id => %{properties: [...], overridden_properties: %{...}}}
+      started_at: System.system_time(:millisecond)
+    }
+    new_state = %{state | transactions: Map.put(state.transactions, tx_id, tx)}
+    {:reply, {:ok, tx_id}, new_state}
+  end
+
+  @impl true
+  def handle_call({:commit_transaction, tx_id}, _from, state) do
+    case Map.get(state.transactions, tx_id) do
+      nil ->
+        {:reply, {:error, :transaction_not_found}, state}
+
+      tx ->
+        # Apply all accumulated changes to the database
+        new_state = apply_transaction_changes(tx, state)
+        # Remove transaction from active transactions
+        new_state = %{new_state | transactions: Map.delete(new_state.transactions, tx_id)}
+        {:reply, :ok, new_state}
+    end
+  end
+
+  @impl true
+  def handle_call({:rollback_transaction, tx_id}, _from, state) do
+    # Simply discard the transaction - no changes were applied
+    new_state = %{state | transactions: Map.delete(state.transactions, tx_id)}
+    {:reply, :ok, new_state}
+  end
+
+  @impl true
+  def handle_call({:set_property_tx, tx_id, obj_id, prop_name, value}, _from, state) do
+    case Map.get(state.transactions, tx_id) do
+      nil ->
+        {:reply, {:error, :transaction_not_found}, state}
+
+      tx ->
+        # Accumulate the change in the transaction
+        change = {:set_property, obj_id, prop_name, value}
+        new_changes = [change | Map.get(tx, :changes, [])]
+        new_tx = %{tx | changes: new_changes}
+        new_state = %{state | transactions: Map.put(state.transactions, tx_id, new_tx)}
+        {:reply, :ok, new_state}
+    end
+  end
+
+  defp apply_transaction_changes(tx, state) do
+    # Apply all changes in the transaction to the database state
+    Enum.reduce(tx.changes, state, fn
+      {:set_property, obj_id, prop_name, value}, acc_state ->
+        case Map.get(acc_state.db.objects, obj_id) do
+          nil -> acc_state  # Object doesn't exist, skip
+          obj ->
+            case handle_set_property(obj, prop_name, value, acc_state) do
+              {:reply, :ok, new_state} -> new_state
+              _ -> acc_state  # Failed, but continue with other changes
+            end
+        end
+    end)
   end
 
   @impl true
