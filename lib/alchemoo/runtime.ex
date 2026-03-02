@@ -80,34 +80,48 @@ defmodule Alchemoo.Runtime do
   defp perform_set_property(runtime, object, obj_id, prop_name, value, info) do
     search_name = String.downcase(prop_name)
 
-    case Enum.find_index(object.properties, &(String.downcase(&1.name) == search_name)) do
-      idx when is_integer(idx) ->
-        # Persist to database server
-        Alchemoo.Database.Server.set_property(obj_id, prop_name, value)
-        
-        # Update local runtime copy
-        new_properties = List.update_at(object.properties, idx, &%{&1 | value: value})
-        new_object = %{object | properties: new_properties}
-        new_objects = Map.put(runtime.objects, obj_id, new_object)
-        {:ok, value, %{runtime | objects: new_objects}}
+    # First, compute what the change would be (don't apply yet)
+    change_result =
+      case Enum.find_index(object.properties, &(String.downcase(&1.name) == search_name)) do
+        idx when is_integer(idx) ->
+          # Compute new properties list
+          new_properties = List.update_at(object.properties, idx, &%{&1 | value: value})
+          {:direct_property, idx, new_properties}
 
-      nil ->
-        # Check inherited property and override it
-        # Inherit perms/owner from the parent property definition
-        new_prop = %Alchemoo.Database.Property{
-          name: prop_name,
-          value: value,
-          owner: info.owner,
-          perms: info.perms
-        }
+        nil ->
+          # Compute new overridden_properties map
+          new_prop = %Alchemoo.Database.Property{
+            name: prop_name,
+            value: value,
+            owner: info.owner,
+            perms: info.perms
+          }
+          new_overridden = Map.put(object.overridden_properties, prop_name, new_prop)
+          {:overridden_property, new_overridden}
+      end
 
-        # Persist to database server
-        Alchemoo.Database.Server.set_property(obj_id, prop_name, value)
-        
-        new_overridden = Map.put(object.overridden_properties, prop_name, new_prop)
-        new_object = %{object | overridden_properties: new_overridden}
-        new_objects = Map.put(runtime.objects, obj_id, new_object)
-        {:ok, value, %{runtime | objects: new_objects}}
+    # Persist to database server FIRST (transactional - if this fails, discard changes)
+    persist_result = Alchemoo.Database.Server.set_property(obj_id, prop_name, value)
+
+    case persist_result do
+      :ok ->
+        # Persistence succeeded, now apply changes to local runtime copy
+        case change_result do
+          {:direct_property, _idx, new_properties} ->
+            new_object = %{object | properties: new_properties}
+            new_objects = Map.put(runtime.objects, obj_id, new_object)
+            {:ok, value, %{runtime | objects: new_objects}}
+
+          {:overridden_property, new_overridden} ->
+            new_object = %{object | overridden_properties: new_overridden}
+            new_objects = Map.put(runtime.objects, obj_id, new_object)
+            {:ok, value, %{runtime | objects: new_objects}}
+        end
+
+      {:error, reason} ->
+        # Persistence failed, discard all changes
+        :logger.error("Failed to persist property: #{obj_id}.#{prop_name} = #{inspect(value)}: #{inspect(reason)}")
+        {:error, Value.err(:E_PERM)}
     end
   end
 
