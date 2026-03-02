@@ -100,7 +100,6 @@ defmodule Alchemoo.Runtime do
 
     # Persist to database server FIRST
     persist_result = Alchemoo.Database.Server.set_property(obj_id, prop_name, value)
-    :logger.error("DEBUG persist: #{obj_id}.#{prop_name} -> #{inspect(persist_result)}")
 
     case persist_result do
       :ok ->
@@ -117,7 +116,6 @@ defmodule Alchemoo.Runtime do
         end
 
       {:error, reason} ->
-        :logger.error("Failed to persist: #{obj_id}.#{prop_name}: #{inspect(reason)}")
         {:error, Value.err(:E_PERM)}
     end
   end

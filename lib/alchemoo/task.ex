@@ -305,50 +305,30 @@ defmodule Alchemoo.Task do
           ast
       end
 
-    # Initialize ticks and side effect queue in process dictionary
+    # Initialize ticks in process dictionary
     Process.put(:ticks_remaining, task.tick_quota - task.ticks_used)
-    Process.put(:pending_notifications, [])
-    :logger.error("DEBUG task_start: verb=#{task.verb_name} player=#{task.player}")
 
     # Execute with tick counting
     try do
       {result, final_env} = execute_statements(ast.statements, task.env)
-      :logger.error("DEBUG task_result: verb=#{task.verb_name} result=#{inspect(result)}")
-
-      # All persistence succeeded during execution, now flush notifications
-      Alchemoo.Builtins.flush_notifications()
-      :logger.error("DEBUG task_flushed: verb=#{task.verb_name}")
 
       ticks_used = task.tick_quota - task.ticks_used - Process.get(:ticks_remaining)
       new_task = %{task | ticks_used: task.ticks_used + ticks_used, env: final_env}
       {:ok, result, new_task}
     catch
       {:return, value} ->
-        :logger.error("DEBUG task_return: verb=#{task.verb_name} value=#{inspect(value)}")
-        # All persistence succeeded, flush notifications before returning
-        Alchemoo.Builtins.flush_notifications()
-        
         ticks_used = task.tick_quota - task.ticks_used - Process.get(:ticks_remaining)
         new_task = %{task | ticks_used: task.ticks_used + ticks_used}
         {:ok, value, new_task}
 
       :quota_exceeded ->
-        :logger.error("DEBUG task_quota: verb=#{task.verb_name}")
-        # Quota exceeded - discard pending notifications
-        Process.delete(:pending_notifications)
         new_task = %{task | ticks_used: task.tick_quota}
         {:quota_exceeded, new_task}
 
       {:error, reason, new_env} ->
-        :logger.error("DEBUG task_error: verb=#{task.verb_name} reason=#{inspect(reason)}")
-        # Error during execution - discard pending notifications
-        Process.delete(:pending_notifications)
         {:error, reason, %{task | env: new_env}}
 
       {:error, reason} ->
-        :logger.error("DEBUG task_error: verb=#{task.verb_name} reason=#{inspect(reason)}")
-        # Error during execution - discard pending notifications
-        Process.delete(:pending_notifications)
         {:error, reason, task}
     end
   end
