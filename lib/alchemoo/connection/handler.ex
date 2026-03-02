@@ -47,7 +47,6 @@ defmodule Alchemoo.Connection.Handler do
   end
 
   def send_output(pid, text) when is_binary(text) do
-    :logger.error("DEBUG send_output: to=#{inspect(pid)} text=#{inspect(text)}")
     GenServer.cast(pid, {:output, text})
   end
 
@@ -499,9 +498,13 @@ defmodule Alchemoo.Connection.Handler do
       {:ok, 0, verb} ->
         runtime = Alchemoo.Runtime.new(DB.get_snapshot())
 
+        # For unauthenticated connections, player is the connection ID (negative number)
+        # This is used by $network:incoming_connection() to identify the connection
+        player_for_env = conn.player_id
+
         env = %{
           :runtime => runtime,
-          "player" => Value.obj(conn.player_id),
+          "player" => Value.obj(player_for_env),
           "this" => Value.obj(0),
           "caller" => Value.obj(-1),
           "verb" => Value.str("do_login_command"),
@@ -510,7 +513,7 @@ defmodule Alchemoo.Connection.Handler do
         }
 
         task_opts = [
-          player: conn.player_id,
+          player: player_for_env,
           this: 0,
           caller: -1,
           # Login task runs with wizard perms to allow system setup
