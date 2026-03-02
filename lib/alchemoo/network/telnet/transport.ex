@@ -2,7 +2,7 @@ defmodule Alchemoo.Network.Telnet.Transport do
   @moduledoc """
   Wraps :ranch_tcp to provide a consistent transport interface.
   """
-  
+
   def send(socket, data), do: :ranch_tcp.send(socket, data)
   def close(socket), do: :ranch_tcp.close(socket)
   def peername(socket), do: :ranch_tcp.peername(socket)

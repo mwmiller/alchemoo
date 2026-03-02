@@ -21,7 +21,7 @@ defmodule Alchemoo.Database.Verb do
           prep: integer(),
           args: {atom(), atom(), atom()},
           code: [String.t()],
-          ast: Alchemoo.AST.Block.t() | nil
+          ast: Alchemoo.MOOCode.AST.Block.t() | nil
         }
 
   @doc """

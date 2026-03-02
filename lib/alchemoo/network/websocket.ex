@@ -59,7 +59,7 @@ defmodule Alchemoo.Network.WebSocket do
     # We can get info from ThousandIsland.listener_info
     # When starting Bandit, it starts a ThousandIsland listener.
     # The pid returned by Bandit.start_link is the ThousandIsland supervisor.
-    
+
     target_pid = pid || Process.whereis(__MODULE__)
 
     if target_pid do
@@ -72,6 +72,7 @@ defmodule Alchemoo.Network.WebSocket do
             address: address,
             connections: 0
           }
+
         _ ->
           %{port: :unknown}
       end
@@ -179,15 +180,16 @@ defmodule Alchemoo.Network.WebSocket do
 
   ## Internal Plug for Bandit
 
+  # credo:disable-for-this-file Credo.Check.Design.AliasUsage
   defmodule Plug do
     @moduledoc false
+    alias Alchemoo.Network.WebSocket
+
     def init(opts), do: opts
 
     def call(conn, _opts) do
-      # Upgrade to WebSocket
-      conn
-      |> WebSockAdapter.upgrade(Alchemoo.Network.WebSocket, [], timeout: 60_000)
-      |> (fn c -> Elixir.Plug.Conn.halt(c) end).()
+      WebSockAdapter.upgrade(conn, WebSocket, [], timeout: 60_000)
+      |> then(&Elixir.Plug.Conn.halt/1)
     end
   end
 end

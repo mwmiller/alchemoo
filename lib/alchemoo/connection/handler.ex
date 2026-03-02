@@ -381,6 +381,7 @@ defmodule Alchemoo.Connection.Handler do
         readline_state =
           conn.readline_state || Readline.new(conn.socket, conn.transport, echo: echo?)
 
+        # credo:disable-for-next-line Credo.Check.Refactor.Nesting
         case Readline.handle_input(clean_data, %{readline_state | echo: echo?}) do
           {:ok, next_state} ->
             {:noreply, %{conn | readline_state: next_state}}

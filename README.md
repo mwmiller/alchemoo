@@ -27,15 +27,27 @@ A modern, high-performance LambdaMOO-compatible server built on the Erlang BEAM 
 
 Alchemoo is now a functional MOO server that can:
 - Load existing MOO databases
-- Accept player connections via Telnet
+- Accept player connections via Telnet, SSH, and WebSocket
 - Parse and execute commands
 - Run verb code from the database
 - Send output to players
 - Handle multiple concurrent players
 - Automatically checkpoint and recover from crashes
 
-**Current Test Status (this branch, March 1, 2026):** 161 tests, 0 failures  
+**Current Test Status (March 2, 2026):** 164 tests, 0 failures
 **Commits:** 80+
+
+## Recent Changes (v0.7.0)
+
+### Parser Improvements
+- **Namespace reorganization**: Moved parser to `Alchemoo.MOOCode.Parser` with proper module structure
+- **Multiple error codes**: Fixed parsing of `except (E_PERM, E_PROPNF)` and `` `expr ! E_RANGE, E_TYPE => 0' ``
+- **Splice operator precedence**: Fixed `@` operator to have correct precedence with ternary expressions
+- **Catch expression matching**: Fixed error code matching for bare atoms vs tuples
+
+### Configuration
+- Increased default tick quota from 10,000 to 100,000 for complex mail operations
+- Disabled verbose trace logging by default
 
 ## Quick Start
 

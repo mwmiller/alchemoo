@@ -1,7 +1,7 @@
 defmodule Alchemoo.TaskTest do
   use ExUnit.Case, async: false
 
-  alias Alchemoo.{Task, TaskSupervisor}
+  alias Alchemoo.{Database, Runtime, Task, TaskSupervisor}
 
   describe "run/3" do
     test "executes simple verb code" do
@@ -17,11 +17,12 @@ defmodule Alchemoo.TaskTest do
       endwhile
       """
 
-      {:ok, pid} = Task.start(verb_code: code, env: %{}, tick_quota: 101)
-      ref = Process.monitor(pid)
+      # We call MOOTask.run directly and expect it to return an error when quota is hit
+      runtime = Runtime.new(Database.Server.get_snapshot())
+      env = %{:runtime => runtime}
+      opts = [tick_quota: 100]
 
-      # Should exceed quota and exit with E_QUOTA
-      assert_receive {:DOWN, ^ref, :process, ^pid, {:shutdown, {:error, {:err, :E_QUOTA}}}}, 5003
+      assert {:error, :E_QUOTA} = Task.run(code, env, opts)
     end
   end
 

@@ -4,7 +4,7 @@ defmodule Alchemoo.Interpreter do
   """
 
   require Logger
-  alias Alchemoo.AST
+  alias Alchemoo.MOOCode.AST
   alias Alchemoo.Value
 
   @doc """
@@ -21,6 +21,16 @@ defmodule Alchemoo.Interpreter do
       {:ok, val} ->
         {:ok, val, env}
 
+      {:error, {:err, :E_TYPE} = err, new_env} ->
+        Logger.error([
+          "E_TYPE error in do_eval: ",
+          "AST=#{inspect(ast, limit: 20)} ",
+          "Env=#{inspect(new_env |> Map.take(["this", "verb", "args", "player", "caller"]) |> inspect(limit: 10))}"
+        ])
+
+        maybe_log_interpreter_context(ast, err, new_env)
+        {:error, err, new_env}
+
       {:error, err, new_env} ->
         if trace_interpreter_eval?(),
           do: Logger.debug("MOO Error: #{inspect(err)} in #{inspect(ast)}")
@@ -29,8 +39,12 @@ defmodule Alchemoo.Interpreter do
         {:error, err, new_env}
 
       {:error, {:err, _} = err} ->
-        if trace_interpreter_eval?(),
-          do: Logger.debug("MOO Error: #{inspect(err)} in #{inspect(ast)}")
+        Logger.error([
+          "Interpreter error: ",
+          "Error=#{inspect(err)} ",
+          "AST=#{inspect(ast, limit: 10)} ",
+          "Env=#{inspect(env, limit: 5)}"
+        ])
 
         maybe_log_interpreter_context(ast, err, env)
         {:error, err, env}
@@ -465,9 +479,10 @@ defmodule Alchemoo.Interpreter do
 
   defp execute_verb_call(obj_val, verb_name, arg_vals, env) do
     if trace_interpreter_statements?() do
-      Logger.debug(
-        "Interpreter: calling verb #{Value.to_literal(obj_val)}:#{verb_name}(#{inspect(arg_vals)})"
-      )
+      Logger.debug([
+        "Interpreter: calling verb ",
+        "#{Value.to_literal(obj_val)}:#{verb_name}(#{inspect(arg_vals)})"
+      ])
     end
 
     case Map.get(env, :runtime) do
@@ -485,6 +500,14 @@ defmodule Alchemoo.Interpreter do
         {:ok, result, Map.put(env, :runtime, new_runtime)}
 
       {:error, err} ->
+        Logger.error([
+          "Interpreter verb call failed: ",
+          "Object=#{inspect(obj_val)} ",
+          "Verb=#{verb_name} ",
+          "Args=#{inspect(arg_vals)} ",
+          "Error=#{inspect(err)}"
+        ])
+
         {:error, err, env}
     end
   end
@@ -529,9 +552,14 @@ defmodule Alchemoo.Interpreter do
 
   defp perform_assignment(%AST.ListExpr{elements: targets}, {:list, values}, env) do
     case destructure_list(targets, values, env) do
-      {:ok, new_env} -> {:ok, {:list, values}, new_env}
-      {:error, err, new_env} -> {:error, err, new_env}
-      {:error, err} -> {:error, err, env}
+      {:ok, new_env} ->
+        {:ok, {:list, values}, new_env}
+
+      {:error, err, new_env} ->
+        {:error, err, new_env}
+
+      {:error, err} ->
+        {:error, err, env}
     end
   end
 
@@ -788,17 +816,23 @@ defmodule Alchemoo.Interpreter do
 
   defp should_catch?(err, codes_expr, env) do
     case codes_expr do
-      :ANY -> true
+      :ANY ->
+        true
+
       _ ->
         case eval(codes_expr, env) do
           {:ok, :ANY, _} -> true
           {:ok, {:err, :ANY}, _} -> true
-          {:ok, {:list, items}, _} -> Enum.any?(items, &Value.equal?(&1, err))
-          {:ok, item, _} -> Value.equal?(item, err)
+          {:ok, {:list, items}, _} -> Enum.any?(items, &catch_code_matches?(err, &1))
+          {:ok, item, _} -> catch_code_matches?(err, item)
           _ -> false
         end
     end
   end
+
+  defp catch_code_matches?(err, {:err, code}), do: err == code or err == {:err, code}
+  defp catch_code_matches?(err, code) when is_atom(code), do: err == code
+  defp catch_code_matches?(_, _), do: false
 
   defp handle_catch_error(err, codes, default, env) do
     if should_catch?(err, codes, env) do

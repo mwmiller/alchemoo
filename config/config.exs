@@ -14,7 +14,7 @@ config :alchemoo, :welcome_text, "Welcome to Alchemoo!"
 
 # CONFIG: Task limits
 config :alchemoo,
-  default_tick_quota: 10_000,
+  default_tick_quota: 100_000,
   system_tick_quota: 1_000_003,
   max_tasks_per_player: 10,
   max_total_tasks: 1000

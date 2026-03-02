@@ -1,4 +1,4 @@
-defmodule Alchemoo.AST do
+defmodule Alchemoo.MOOCode.AST do
   @moduledoc """
   Abstract Syntax Tree for MOO code.
   """

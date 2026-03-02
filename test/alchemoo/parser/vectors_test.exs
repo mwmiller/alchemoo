@@ -1,6 +1,6 @@
 defmodule Alchemoo.Parser.VectorsTest do
   use ExUnit.Case
-  alias Alchemoo.Parser.Program
+  alias Alchemoo.MOOCode.Parser
 
   @vectors [
     # 1. Basic if
@@ -178,8 +178,10 @@ defmodule Alchemoo.Parser.VectorsTest do
 
   test "parses all vectors correctly" do
     Enum.each(Enum.with_index(@vectors, 1), fn {code, idx} ->
-      case Program.parse(code) do
-        {:ok, _ast} -> :ok
+      case Parser.parse(code) do
+        {:ok, _ast} ->
+          :ok
+
         {:error, reason} ->
           flunk("Failed to parse vector ##{idx}:\n#{code}\nReason: #{inspect(reason)}")
       end

@@ -21,7 +21,7 @@ return x + y;
 IO.puts("\nTest code:")
 IO.puts(test_code)
 
-{:ok, ast} = Alchemoo.Parser.MOOSimple.parse(test_code)
+{:ok, ast} = Alchemoo.Parser.Program.parse(test_code)
 IO.puts("✓ Parsed successfully")
 
 # Execute

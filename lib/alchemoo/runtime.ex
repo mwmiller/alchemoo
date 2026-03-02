@@ -11,7 +11,7 @@ defmodule Alchemoo.Runtime do
   alias Alchemoo.Database.Permissions
   alias Alchemoo.Database.Server, as: DB
   alias Alchemoo.Database.Verb
-  alias Alchemoo.Parser.MOOSimple
+  alias Alchemoo.MOOCode.{AST, Parser}
   alias Alchemoo.Value
 
   defstruct [:db, :objects]
@@ -359,21 +359,20 @@ defmodule Alchemoo.Runtime do
 
   defp perform_verb_execution(verb, this_id, args, env, runtime, context) do
     case verb.ast do
-      %Alchemoo.AST.Block{} = ast ->
+      %AST.Block{} = ast ->
         execute_cached_ast(ast, verb, this_id, args, env, runtime, context)
 
       nil ->
         parse_and_execute_verb(verb, this_id, args, env, runtime, context)
+
+      other ->
+        Logger.error("Runtime: verb.ast has unexpected type: #{inspect(other)}")
+        Logger.error("Runtime: verb = ##{this_id}:#{verb.name}")
+        {:error, Value.err(:E_VERBNF)}
     end
   end
 
   defp execute_cached_ast(ast, verb, this_id, args, env, runtime, context) do
-    if trace_runtime_verbs?() do
-      Logger.debug(
-        "Runtime: executing cached AST for #{Value.to_literal(Value.obj(this_id))}:#{verb.name}()"
-      )
-    end
-
     verb_env = build_verb_env(env, runtime, args, this_id, verb.name, context)
 
     case execute_statements(ast.statements, verb_env) do
@@ -382,14 +381,24 @@ defmodule Alchemoo.Runtime do
 
       {:error, reason, _final_env} ->
         handle_exec_failure(verb, this_id, reason, context)
+
+      other ->
+        Logger.error([
+          "Runtime execute_statements unexpected: #{inspect(other)} ",
+          "Verb=##{this_id}:#{verb.name} ",
+          "AST=#{inspect(ast.statements, limit: 5)}"
+        ])
+
+        {:error, Value.err(:E_VERBNF)}
     end
   end
 
   defp handle_exec_failure(verb, this_id, reason, context) do
-    # If execution fails, invalidate the cache just in case the AST is problematic
-    Logger.debug(
-      "Runtime: verb execution failed for ##{this_id}:#{verb.name}, invalidating AST cache"
-    )
+    Logger.error([
+      "Runtime verb execution failed: ",
+      "Verb=##{this_id}:#{verb.name} ",
+      "Reason=#{inspect(reason)}"
+    ])
 
     definer_id = context[:verb_definer] || this_id
     DB.set_verb_ast(definer_id, verb.name, nil)
@@ -403,8 +412,8 @@ defmodule Alchemoo.Runtime do
       )
     end
 
-    case MOOSimple.parse(verb.code) do
-      {:ok, %Alchemoo.AST.Block{} = ast} ->
+    case Parser.parse(Enum.join(verb.code, "\n")) do
+      {:ok, %AST.Block{} = ast} ->
         definer_id = context[:verb_definer] || this_id
         DB.set_verb_ast(definer_id, verb.name, ast)
         execute_cached_ast(ast, verb, this_id, args, env, runtime, context)
@@ -414,7 +423,12 @@ defmodule Alchemoo.Runtime do
           "Runtime: failed to parse verb code for ##{this_id}:#{verb.name}: #{inspect(reason)}"
         )
 
-        maybe_log_parse_failure_source(verb)
+        snippet =
+          verb.code
+          |> Enum.with_index(1)
+          |> Enum.map_join("\n", fn {line, idx} -> "#{idx}: #{line}" end)
+
+        Logger.error("Runtime parse source for ##{this_id}:#{verb.name}:\n" <> snippet)
 
         {:error, Value.err(:E_VERBNF)}
     end
@@ -473,20 +487,9 @@ defmodule Alchemoo.Runtime do
   defp trace_runtime_properties?,
     do: Application.get_env(:alchemoo, :trace_runtime_properties, false)
 
-  defp maybe_log_parse_failure_source(verb) do
-    if Application.get_env(:alchemoo, :trace_runtime_verbs, false) do
-      snippet =
-        verb.code
-        |> Enum.with_index(1)
-        |> Enum.map_join("\n", fn {line, idx} -> "#{idx}: #{line}" end)
-
-      Logger.debug("Runtime parse source for #{verb.name}:\n" <> snippet)
-    end
-  end
-
   defp execute_statements(stmts, env) do
     # Use Alchemoo.Interpreter.eval_block since it now handles env propagation
-    Alchemoo.Interpreter.eval(%Alchemoo.AST.Block{statements: stmts}, env)
+    Alchemoo.Interpreter.eval(%AST.Block{statements: stmts}, env)
   rescue
     e ->
       Logger.error("Runtime: execution exception: #{inspect(e)}")

@@ -7,7 +7,7 @@ defmodule Alchemoo.Task do
   use GenServer, restart: :temporary
   require Logger
 
-  alias Alchemoo.{Interpreter, Parser, Value}
+  alias Alchemoo.{Interpreter, MOOCode, Value}
 
   defp default_tick_quota, do: Application.get_env(:alchemoo, :default_tick_quota, 10_000)
   defp max_tasks_per_player, do: Application.get_env(:alchemoo, :max_tasks_per_player, 10)
@@ -282,16 +282,21 @@ defmodule Alchemoo.Task do
   ## Private Helpers
 
   defp execute_with_quota(task) do
-    # Parse verb code if it's a string
+    # Parse verb code if it's a string or list of lines
     ast =
       case task.verb_code do
         code when is_binary(code) ->
-          case Parser.MOOSimple.parse(code) do
-            {:ok, ast} ->
-              ast
+          case MOOCode.Parser.parse(code) do
+            {:ok, ast} -> ast
+            {:error, _reason} -> throw({:error, Value.err(:E_VERBNF)})
+          end
 
-            {:error, _reason} ->
-              throw({:error, Value.err(:E_VERBNF)})
+        code when is_list(code) ->
+          code_str = Enum.join(code, "\n")
+
+          case MOOCode.Parser.parse(code_str) do
+            {:ok, ast} -> ast
+            {:error, _reason} -> throw({:error, Value.err(:E_VERBNF)})
           end
 
         ast ->

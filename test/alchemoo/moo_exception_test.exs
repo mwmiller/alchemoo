@@ -2,7 +2,7 @@ defmodule Alchemoo.MOOExceptionTest do
   use ExUnit.Case
   alias Alchemoo.Database.Server, as: DB
   alias Alchemoo.Interpreter
-  alias Alchemoo.Parser.MOOSimple
+  alias Alchemoo.MOOCode.Parser
   alias Alchemoo.Runtime
   alias Alchemoo.Value
 
@@ -41,7 +41,7 @@ defmodule Alchemoo.MOOExceptionTest do
       |> Map.put_new("E_FLOAT", Value.err(:E_FLOAT))
       |> Map.put_new("ANY", :ANY)
 
-    {:ok, ast} = MOOSimple.parse(code)
+    {:ok, ast} = Parser.parse(code)
 
     try do
       case Interpreter.eval(ast, env) do

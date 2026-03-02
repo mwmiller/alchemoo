@@ -1,10 +1,9 @@
-defmodule Alchemoo.Parser.ProgramTest do
+defmodule Alchemoo.ParserTest do
   use ExUnit.Case
-  alias Alchemoo.{AST, Value}
-  alias Alchemoo.Parser.Program
+  alias Alchemoo.MOOCode.{AST, Parser}
 
   test "parses simple return statement" do
-    {:ok, %AST.Block{statements: stmts}} = Program.parse("return 42;")
+    {:ok, %AST.Block{statements: stmts}} = Parser.parse("return 42;")
     assert [%AST.Return{value: %AST.Literal{value: {:num, 42}}}] = stmts
   end
 
@@ -14,7 +13,8 @@ defmodule Alchemoo.Parser.ProgramTest do
       return 1;
     endif
     """
-    {:ok, %AST.Block{statements: stmts}} = Program.parse(code)
+
+    {:ok, %AST.Block{statements: stmts}} = Parser.parse(code)
     assert [%AST.If{condition: %AST.Literal{value: {:num, 1}}, then_block: %AST.Block{}}] = stmts
   end
 
@@ -26,7 +26,8 @@ defmodule Alchemoo.Parser.ProgramTest do
       return 0;
     endif
     """
-    {:ok, %AST.Block{statements: stmts}} = Program.parse(code)
+
+    {:ok, %AST.Block{statements: stmts}} = Parser.parse(code)
     assert [%AST.If{else_block: %AST.Block{}}] = stmts
   end
 
@@ -38,7 +39,8 @@ defmodule Alchemoo.Parser.ProgramTest do
       return 2;
     endif
     """
-    {:ok, %AST.Block{statements: stmts}} = Program.parse(code)
+
+    {:ok, %AST.Block{statements: stmts}} = Parser.parse(code)
     assert [%AST.If{elseif_blocks: [%AST.ElseIf{}]}] = stmts
   end
 
@@ -53,7 +55,13 @@ defmodule Alchemoo.Parser.ProgramTest do
       return 0;
     endif
     """
-    assert {:ok, %AST.Block{statements: [%AST.If{else_block: %AST.Block{statements: [%AST.If{}, %AST.Return{}]}}]}} = Program.parse(code)
+
+    assert {:ok,
+            %AST.Block{
+              statements: [
+                %AST.If{else_block: %AST.Block{statements: [%AST.If{}, %AST.Return{}]}}
+              ]
+            }} = Parser.parse(code)
   end
 
   test "parses complex nested structure from LambdaCore" do
@@ -74,7 +82,8 @@ defmodule Alchemoo.Parser.ProgramTest do
       return 0;
     endif
     """
-    assert {:ok, %AST.Block{statements: [%AST.If{}]}} = Program.parse(code)
+
+    assert {:ok, %AST.Block{statements: [%AST.If{}]}} = Parser.parse(code)
   end
 
   test "parses try-except ANY" do
@@ -85,7 +94,9 @@ defmodule Alchemoo.Parser.ProgramTest do
       return E_DIV;
     endtry
     """
-    assert {:ok, %AST.Block{statements: [%AST.Try{except_clauses: [%AST.Except{codes: :ANY}]}]}} = Program.parse(code)
+
+    assert {:ok, %AST.Block{statements: [%AST.Try{except_clauses: [%AST.Except{codes: :ANY}]}]}} =
+             Parser.parse(code)
   end
 
   test "parses try with multiple except clauses" do
@@ -98,7 +109,11 @@ defmodule Alchemoo.Parser.ProgramTest do
       return 2;
     endtry
     """
-    assert {:ok, %AST.Block{statements: [%AST.Try{except_clauses: [%AST.Except{}, %AST.Except{codes: :ANY}]}]}} = Program.parse(code)
+
+    assert {:ok,
+            %AST.Block{
+              statements: [%AST.Try{except_clauses: [%AST.Except{}, %AST.Except{codes: :ANY}]}]
+            }} = Parser.parse(code)
   end
 
   test "parses while loop" do
@@ -107,7 +122,8 @@ defmodule Alchemoo.Parser.ProgramTest do
       return 1;
     endwhile
     """
-    assert {:ok, %AST.Block{statements: [%AST.While{}]}} = Program.parse(code)
+
+    assert {:ok, %AST.Block{statements: [%AST.While{}]}} = Parser.parse(code)
   end
 
   test "parses for-in-list loop" do
@@ -116,7 +132,9 @@ defmodule Alchemoo.Parser.ProgramTest do
       return x;
     endfor
     """
-    assert {:ok, %AST.Block{statements: [%AST.ForList{var: "x"}]}} = Program.parse(code)
+
+    assert {:ok, %AST.Block{statements: [%AST.ForList{var: "x"}]}} =
+             Parser.parse(code)
   end
 
   test "parses for-range loop" do
@@ -125,22 +143,52 @@ defmodule Alchemoo.Parser.ProgramTest do
       return i;
     endfor
     """
-    assert {:ok, %AST.Block{statements: [%AST.For{var: "i"}]}} = Program.parse(code)
+
+    assert {:ok, %AST.Block{statements: [%AST.For{var: "i"}]}} =
+             Parser.parse(code)
   end
 
   test "parses scientific floats" do
-    assert {:ok, %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Literal{value: {:float, 1.0e24}}}]}} = Program.parse("1e+24;")
-    assert {:ok, %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Literal{value: {:float, -1.5e-10}}}]}} = Program.parse("-1.5e-10;")
+    assert {:ok,
+            %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Literal{value: {:float, 1.0e24}}}]}} =
+             Parser.parse("1e+24;")
+
+    # Negative floats are parsed as unary negation (correct behavior)
+    assert {:ok,
+            %AST.Block{
+              statements: [
+                %AST.ExprStmt{
+                  expr: %AST.UnaryOp{op: :-, expr: %AST.Literal{value: {:float, 1.5e-10}}}
+                }
+              ]
+            }} = Parser.parse("-1.5e-10;")
   end
 
   test "parses backtick catch with ANY" do
     code = "`1 / 0 ! ANY => 42';"
-    assert {:ok, %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Catch{codes: :ANY}}]}} = Program.parse(code)
+
+    assert {:ok, %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Catch{codes: :ANY}}]}} =
+             Parser.parse(code)
   end
 
   test "parses list destructuring with optional vars" do
     code = "{search, ?sofar = 0} = args;"
-    assert {:ok, %AST.Block{statements: [%AST.ExprStmt{expr: %AST.Assignment{target: %AST.ListExpr{elements: [%AST.Var{}, %AST.OptionalVar{name: "sofar"}]}}}]}} = Program.parse(code)
+
+    assert {:ok,
+            %AST.Block{
+              statements: [
+                %AST.ExprStmt{
+                  expr: %AST.Assignment{
+                    target: %AST.ListExpr{
+                      elements: [
+                        %AST.Var{name: "search"},
+                        %AST.OptionalVar{name: "sofar", default: %AST.Literal{value: {:num, 0}}}
+                      ]
+                    }
+                  }
+                }
+              ]
+            }} = Parser.parse(code)
   end
 
   test "strips end-of-line comments" do
@@ -150,7 +198,8 @@ defmodule Alchemoo.Parser.ProgramTest do
       return x; # yet another
     endif # comment here
     """
-    {:ok, %AST.Block{statements: stmts}} = Program.parse(code)
-    assert [%AST.Assignment{}, %AST.If{}] = stmts
+
+    {:ok, %AST.Block{statements: stmts}} = Parser.parse(code)
+    assert [%AST.ExprStmt{expr: %AST.Assignment{}}, %AST.If{}] = stmts
   end
 end

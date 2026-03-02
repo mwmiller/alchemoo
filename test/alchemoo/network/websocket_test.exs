@@ -22,14 +22,15 @@ defmodule Alchemoo.Network.WebSocketTest do
   setup do
     # Use the random port selection pattern from config/test.exs
     port = get_good_port()
-    
+
     # Start a local WebSocket listener on this port
     # We use a unique ID to avoid conflict with the one from the app
     # if it's already running.
-    child_spec = Supervisor.child_spec({Alchemoo.Network.WebSocket, port: port}, id: :test_websocket)
-    
+    child_spec =
+      Supervisor.child_spec({Alchemoo.Network.WebSocket, port: port}, id: :test_websocket)
+
     _pid = start_supervised!(child_spec)
-    
+
     # Wait for it to start
     :timer.sleep(100)
 
@@ -59,7 +60,7 @@ defmodule Alchemoo.Network.WebSocketTest do
 
     # Wait for initial login output from #0:do_login_command
     wait_for_content(5000)
-    
+
     # Clean up
     Process.exit(client, :normal)
   end
@@ -75,7 +76,9 @@ defmodule Alchemoo.Network.WebSocketTest do
     WebSockex.cast(client, {:send, "help"})
 
     msg = wait_for_content(5000)
-    assert String.contains?(msg, "help") or String.contains?(msg, "I don't understand") or String.contains?(msg, "connect") or String.contains?(msg, "Usage")
+
+    assert String.contains?(msg, "help") or String.contains?(msg, "I don't understand") or
+             String.contains?(msg, "connect") or String.contains?(msg, "Usage")
 
     # Clean up
     Process.exit(client, :normal)

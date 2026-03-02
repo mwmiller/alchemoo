@@ -113,6 +113,6 @@ defmodule Alchemoo.InterpreterTest do
 
   test "splice operator can target conditional expressions" do
     {:ok, ast, []} = Expression.parse("@(1 ? {{2}} | {})")
-    assert %Alchemoo.AST.UnaryOp{op: :@, expr: %Alchemoo.AST.Conditional{}} = ast
+    assert %Alchemoo.MOOCode.AST.UnaryOp{op: :@, expr: %Alchemoo.MOOCode.AST.Conditional{}} = ast
   end
 end

@@ -12,11 +12,15 @@
 ### MOO Interpreter (100%)
 - **Language**: Full AST-based interpreter
 - **Parser**: Robust recursive descent parser with iterative precedence climbing
+- **Namespace**: Reorganized to `Alchemoo.MOOCode.Parser` for better module structure
 - **Complexity**: Handles deeply nested structures and complex expressions (e.g. `if (caller != #0)`)
 - **Types**: INT, OBJ, STR, ERR, LIST, FLOAT
 - **Control Flow**: `if/elseif/else`, `while`, `for` (list/range), `try/except/finally`, `break/continue`
 - **Expressions**: All arithmetic, logical, and comparison operators
-- **Tick Quotas**: Accurate tick counting and enforcement
+- **Catch Expressions**: Fixed parsing of `` `expr ! E_RANGE, E_TYPE => 0' `` with multiple error codes
+- **Except Clauses**: Fixed parsing of `except (E_PERM, E_PROPNF)` with multiple error codes
+- **Splice Operator**: Fixed `@` operator precedence with ternary expressions
+- **Tick Quotas**: Accurate tick counting and enforcement (default: 100,000)
 - **Isolation**: Crashes are isolated to individual task processes
 - **Security**: MOO-compatible permission checks for objects, properties, and verbs
 
