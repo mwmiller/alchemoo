@@ -82,7 +82,10 @@ defmodule Alchemoo.Runtime do
 
     case Enum.find_index(object.properties, &(String.downcase(&1.name) == search_name)) do
       idx when is_integer(idx) ->
-        # Update local property
+        # Persist to database server
+        Alchemoo.Database.Server.set_property(obj_id, prop_name, value)
+        
+        # Update local runtime copy
         new_properties = List.update_at(object.properties, idx, &%{&1 | value: value})
         new_object = %{object | properties: new_properties}
         new_objects = Map.put(runtime.objects, obj_id, new_object)
@@ -98,6 +101,9 @@ defmodule Alchemoo.Runtime do
           perms: info.perms
         }
 
+        # Persist to database server
+        Alchemoo.Database.Server.set_property(obj_id, prop_name, value)
+        
         new_overridden = Map.put(object.overridden_properties, prop_name, new_prop)
         new_object = %{object | overridden_properties: new_overridden}
         new_objects = Map.put(runtime.objects, obj_id, new_object)
