@@ -487,6 +487,10 @@ Checkpoints will fail if disk is full. Monitor disk space and adjust `keep_last`
 ### Checkpoint not found on startup
 If the specified checkpoint doesn't exist, the server logs an error and continues with an empty database.
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever checkpoint behavior, configuration, or recovery logic changes, update this file accordingly.
+
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**

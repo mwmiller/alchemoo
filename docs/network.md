@@ -76,6 +76,10 @@ For interactive connections (Telnet and SSH), Alchemoo uses a custom `Readline` 
 - **Terminal Control**: Uses ANSI escape sequences to clear lines and reposition the cursor during editing.
 - **History**: Maintains a per-connection history of recently executed commands.
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever code changes affect network features, configuration, or architecture described here, update this file accordingly.
+
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**

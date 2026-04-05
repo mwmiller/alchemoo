@@ -74,6 +74,11 @@ system = db.objects[0]
 
 - `parse_file/1` is not currently exposed; use `File.read!/1` plus `parse/1`.
 - Float-typed DB values are currently represented as `{:float, raw_string}`.
+
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever parser behavior, format support, or limitations change, update this file accordingly.
+
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**

@@ -169,3 +169,7 @@ No configuration needed - this behavior is part of MOO compatibility.
 - [Built-in Functions](builtins-status.md) - create(), recycle(), max_object()
 - [Database](database.md) - Database structure
 - [Checkpoint System](checkpoint.md) - Persistence
+
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever object ID allocation, database behavior, or related implementation details change, update this file accordingly.

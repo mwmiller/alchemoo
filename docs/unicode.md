@@ -234,6 +234,10 @@ Just use Unicode freely in:
 - Chat messages
 - Descriptions
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever Unicode handling, string operations, or encoding behavior changes, update this file accordingly.
+
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**

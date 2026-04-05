@@ -193,3 +193,7 @@ See `test/alchemoo/command/parser_test.exs` and `test/alchemoo/command/executor_
 - [Task System](tasks.md)
 - [Built-in Functions](builtins-status.md)
 - [Database](database.md)
+
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever command parsing, execution, or preposition handling changes, update this file accordingly.

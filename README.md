@@ -34,8 +34,8 @@ Alchemoo is now a functional MOO server that can:
 - Handle multiple concurrent players
 - Automatically checkpoint and recover from crashes
 
-**Current Test Status (March 2, 2026):** 164 tests, 0 failures
-**Commits:** 80+
+**Current Test Status (April 5, 2026):** 164 tests, 0 failures
+**Commits:** 110+
 
 ## Recent Changes
 
@@ -186,6 +186,10 @@ elixir examples/task_demo.exs
 - [ ] Performance optimization
 - [x] WebSocket support
 - [ ] Implement remaining network stubs (listen/unlisten)
+
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever code changes affect features, status, roadmap items, or configuration described here, update this file accordingly. Run `mix test` and verify the reported status is accurate. Remove or update any stale information (old dates, resolved issues, outdated metrics) as part of every change.
 
 ## License
 

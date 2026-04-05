@@ -6,10 +6,10 @@ Alchemoo is a modern, high-performance LambdaMOO-compatible server built on the 
 
 ## Status: Multi-Transport MOO Server
 
-**Commits:** 110+  
-**Current branch tests (March 1, 2026):** 163 tests, 0 failures  
-**Lines of Code:** ~10,000  
-**Version:** 0.7.0 (Multi-Transport Support)
+**Commits:** 110+
+**Current branch tests (April 5, 2026):** 164 tests, 0 failures
+**Lines of Code**: ~10,000
+**Version:** 0.7.1 (Multi-Transport Support)
 
 ## What Works
 
@@ -70,6 +70,10 @@ User (Telnet/SSH/WS) → Transport Bridge → Connection.Handler (GenServer)
 1.  **Performance**: Optimize hot paths in the interpreter and database lookups.
 2.  **Network Stubs**: Fully implement `listen`, `unlisten`, and `open_network_connection`.
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever code changes affect features, status, roadmap items, or architecture described here, update this file accordingly. Always verify test counts, version numbers, and commit counts are accurate.
+
 ---
 
-**This summary is current as of March 1, 2026.**
+**This summary is current as of April 5, 2026.**

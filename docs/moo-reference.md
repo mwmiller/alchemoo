@@ -98,3 +98,7 @@ BEAM's actor model is superior to MOO's task system:
 - [MOO FAQ](https://www.moo.mud.org/moo-faq/)
 - [LambdaMOO Programmer's Manual](ftp://ftp.research.att.com/dist/eostrom/MOO/html/ProgrammersManual.html)
 - [LambdaMOO SourceForge](http://sourceforge.net/projects/lambdamoo/)
+
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever referenced resources, MOO concepts, or implementation notes change, update this file accordingly.

@@ -52,7 +52,7 @@ You should see output like:
 
 ```
 [info] Startup database loaded from test/fixtures/lambdacore.db (95 objects)
-[info] Checkpoint server started (dir: /Users/matt/.local/state/alchemoo/checkpoints, ...)
+[info] Checkpoint server started (dir: ~/.local/state/alchemoo/checkpoints, ...)
 [info] Telnet server listening on port 7777
 [info] SSH server listening on port 2222
 ```
@@ -121,6 +121,10 @@ config :alchemoo, :checkpoint,
 2. **Read the documentation** - Check out [docs/](docs/)
 3. **Write MOO code** - Create verbs and properties
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever setup steps, configuration, or installation requirements change, update this file accordingly.
+
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**

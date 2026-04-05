@@ -77,5 +77,9 @@ Based on modern forks, Alchemoo should consider implementing:
 ### 5.2. Benchmarking
 Use `EtaMOO` and `ToastStunt` as performance baselines for task execution and database lookups.
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever referenced projects, resources, or comparisons change, update this file accordingly.
+
 ---
-*Updated for Alchemoo Project - March 1, 2026*
+*Updated for Alchemoo Project - April 5, 2026*

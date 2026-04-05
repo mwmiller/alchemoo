@@ -100,6 +100,10 @@ Alchemoo uses the `fingerart` library to generate "Drunken Bishop" visualization
 ### Unified Connection Handler
 Regardless of the transport (Telnet or SSH), all connections are handled by `Alchemoo.Connection.Handler`. This ensures consistent command parsing, verb execution, and output handling across all protocols.
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever network configuration, transport protocols, or connection handling changes, update this file accordingly.
+
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**

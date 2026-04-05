@@ -58,9 +58,14 @@
 - **Lines of Code**: ~10,000
 - **Modules**: 43
 - **Commits**: 110+
-- **Version**: 0.7.0
+- **Version**: 0.7.1
 - **Completion**: ~99.5% of core MOO functionality
+- **Tests**: 164 passing, 0 failures (April 5, 2026)
+
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever code changes affect features, status, metrics, or known issues described here, update this file accordingly. Always verify test counts, version numbers, and roadmap items are accurate.
 
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**

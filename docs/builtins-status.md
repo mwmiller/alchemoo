@@ -161,9 +161,9 @@
 ### Network (10)
 - ✅ `idle_seconds(player)` - Get idle time
 - ✅ `connected_seconds(player)` - Get connection time
-- ✅ `listen(obj, point)` - Start listening (stub)
-- ✅ `unlisten(point)` - Stop listening (stub)
-- ✅ `open_network_connection(host, port)` - Outbound connect (stub)
+- ⚠️ `listen(obj, point)` - Start listening (stub — always returns E_PERM)
+- ⚠️ `unlisten(point)` - Stop listening (stub — always returns E_PERM)
+- ⚠️ `open_network_connection(host, port)` - Outbound connect (stub — always returns E_PERM)
 - ✅ `force_input(player, text)` - Inject command
 - ✅ `connection_options(player)` - List option names
 - ✅ `connection_option(player, name)` - Get option value
@@ -189,6 +189,10 @@
 - ✅ `ticks_left()` - Get remaining ticks
 - ✅ `seconds_left()` - Get remaining seconds
 
+## Documentation Maintenance
+
+**This documentation MUST be kept in sync with the codebase.** Whenever builtins are added, implemented, or changed, update this file accordingly. Keep stub status clearly marked and accurate.
+
 ---
 
-**This documentation is up to date as of March 1, 2026.**
+**This documentation is up to date as of April 5, 2026.**
