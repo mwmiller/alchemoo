@@ -350,6 +350,7 @@ defmodule Alchemoo.Runtime do
     # If the 'x' bit IS set, the verb runs with the owner's permissions.
     # VF_EXEC is bit 4 (0x04) in the permission mask.
     old_perms = Map.get(context, :perms, -1)
+    verb_x_bit = verb.perms
 
     new_perms =
       if Permissions.verb_allows?(verb, old_perms, Permissions.exec()) do
@@ -357,6 +358,14 @@ defmodule Alchemoo.Runtime do
       else
         old_perms
       end
+
+    if Application.get_env(:alchemoo, :trace_calling_contexts, false) do
+      Logger.warning(
+        "Verb context: ##{this_id}:#{verb.name} old_perms=#{old_perms} new_perms=#{new_perms} " <>
+          "(x_bit=#{verb_x_bit}, owner=#{verb.owner}) " <>
+          "caller_perms=#{Map.get(context, :caller_perms, -1)} player=#{Map.get(context, :player, -1)}"
+      )
+    end
 
     Map.merge(context, %{
       this: this_id,

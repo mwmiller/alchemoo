@@ -39,6 +39,7 @@ config :alchemoo, :network,
 # Optional high-volume trace logging (off by default).
 config :alchemoo,
   trace_builtins: false,
+  trace_calling_contexts: true,
   trace_connections: false,
   trace_input: false,
   trace_ssh: false,

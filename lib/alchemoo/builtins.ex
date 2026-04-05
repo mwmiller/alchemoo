@@ -830,6 +830,7 @@ defmodule Alchemoo.Builtins do
   # set_task_perms(obj) - set current task permissions
   def set_task_perms([{:obj, obj_id}]) do
     current_perms = get_task_context(:perms) || 2
+    verb_name = get_task_context(:verb_name) || "(unknown)"
 
     # Check if current task is wizard or setting to self
     can_set? =
@@ -843,6 +844,10 @@ defmodule Alchemoo.Builtins do
       set_task_context(:player, obj_id)
       Value.num(1)
     else
+      Logger.error(
+        "set_task_perms DENIED: verb=#{verb_name} tried to set perms to ##{obj_id} " <>
+          "but current perms=##{current_perms} (wizard?=#{can_set?})"
+      )
       Value.err(:E_PERM)
     end
   end
