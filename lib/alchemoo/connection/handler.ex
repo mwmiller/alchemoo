@@ -591,6 +591,8 @@ defmodule Alchemoo.Connection.Handler do
           player: 2,
           this: 0,
           caller: -1,
+          perms: 2,
+          caller_perms: 2,
           args: args,
           handler_pid: self(),
           verb_name: verb_name,

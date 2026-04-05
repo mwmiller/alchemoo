@@ -1394,6 +1394,7 @@ defmodule Alchemoo.Builtins do
           this: this_id,
           caller: perms,
           perms: perms,
+          caller_perms: perms,
           args: args,
           verb_name: verb_name
         ]
