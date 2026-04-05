@@ -80,6 +80,8 @@ defmodule Alchemoo.Command.Executor do
       player: player_id,
       this: player_id,
       caller: player_id,
+      perms: player_id,
+      caller_perms: player_id,
       handler_pid: handler_pid,
       verb_name: "eval"
     ]
@@ -289,6 +291,8 @@ defmodule Alchemoo.Command.Executor do
       player: player_id,
       this: obj_id,
       caller: player_id,
+      perms: player_id,
+      caller_perms: player_id,
       handler_pid: handler_pid,
       args: items,
       verb_name: parsed.verb
